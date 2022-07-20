@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/muesli/coral"
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/sqlite"
@@ -44,7 +46,7 @@ func openIndex(ctx context.Context, name string) (index.Interface, error) {
 	if err == nil && inf.Mode().IsRegular() {
 		existingIndexFile = true
 	}
-	db, err := sql.Open("sqlite3", "file:"+name)
+	db, err := sql.Open("sqlite", "file:"+name)
 	if err != nil {
 		return nil, err
 	}

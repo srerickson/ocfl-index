@@ -6,18 +6,14 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"math/rand"
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl-index/internal/testinv"
-	"github.com/srerickson/ocfl-index/sqlite"
 	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
 )
@@ -52,13 +48,7 @@ func init() {
 }
 
 func doBenchmark(ctx context.Context, fname string, numinv int, size int) error {
-	sqlDB, err := sql.Open("sqlite3", "file:"+fname)
-	if err != nil {
-		return err
-	}
-	defer sqlDB.Close()
-	idx := sqlite.New(sqlDB)
-	_, err = idx.MigrateSchema(ctx, false)
+	idx, err := openIndex(ctx, fname)
 	if err != nil {
 		return err
 	}
