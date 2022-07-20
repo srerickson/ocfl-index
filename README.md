@@ -26,7 +26,7 @@ Use "ocfl-index [command] --help" for more information about a command.
 You can index OCFL storage roots stored on the local filesystem, on AWS S3, or in a zip archive. 
 
 ```sh
-# index a storage root localy
+# index a storage root locally
 ocfl-index index --dir ~/my/root
 
 # index a storage root on s3
@@ -59,6 +59,6 @@ Credentials set with the `aws` cli are used. You may also use the following envi
 AWS_ACCESS_KEY_ID= ... 
 # Secret Access Key
 AWS_SECRET_ACCESS_KEY=SECRET
-# Refion
+# Region
 AWS_REGION=us-east-1
 ```
