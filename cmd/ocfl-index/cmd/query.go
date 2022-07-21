@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -37,7 +38,12 @@ func init() {
 }
 
 func DoQuery(ctx context.Context, dbName string, args []string) error {
-	idx, err := openIndex(ctx, dbName)
+	db, err := sql.Open("sqlite", "file:"+dbName)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	idx, err := prepareIndex(ctx, db)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"math/rand"
@@ -47,8 +48,13 @@ func init() {
 	benchmarkCmd.Flags().StringVarP(&benchmarkFlags.file, "file", "f", "benchmark-%d.sqlite", "complete index sqlite file")
 }
 
-func doBenchmark(ctx context.Context, fname string, numinv int, size int) error {
-	idx, err := openIndex(ctx, fname)
+func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error {
+	db, err := sql.Open("sqlite", "file:"+dbName)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	idx, err := prepareIndex(ctx, db)
 	if err != nil {
 		return err
 	}

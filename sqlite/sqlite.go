@@ -22,9 +22,10 @@ const (
 	tablePrefix = "ocfl_index_"
 )
 
-var schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 1}
-
 var (
+	// expected schema for index file
+	schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 1}
+
 	//go:embed schema.sql
 	querySchema string
 

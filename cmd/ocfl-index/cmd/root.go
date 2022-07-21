@@ -40,25 +40,14 @@ func init() {
 	)
 }
 
-func openIndex(ctx context.Context, name string) (index.Interface, error) {
-	var existingIndexFile bool
-	inf, err := os.Stat(name)
-	if err == nil && inf.Mode().IsRegular() {
-		existingIndexFile = true
-	}
-	db, err := sql.Open("sqlite", "file:"+name)
+func prepareIndex(ctx context.Context, db *sql.DB) (index.Interface, error) {
+	idx := sqlite.New(db)
+	created, err := idx.MigrateSchema(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	idx := sqlite.New(db)
-	if !existingIndexFile {
-		created, err := idx.MigrateSchema(ctx, false)
-		if err != nil {
-			return nil, err
-		}
-		if created {
-			log.Println("created new index tables in", name)
-		}
+	if created {
+		log.Println("created new index tables")
 	}
 	return idx, err
 }

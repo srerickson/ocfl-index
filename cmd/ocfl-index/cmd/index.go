@@ -7,12 +7,14 @@ package cmd
 import (
 	"archive/zip"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/muesli/coral"
@@ -20,11 +22,19 @@ import (
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
+const (
+	// envS3AccessKey = "AWS_ACCESS_KEY_ID"
+	// envS3Secret    = "AWS_SECRET_ACCESS_KEY"
+	// envS3Region    = "AWS_REGION"
+	envS3Endpoint = "AWS_S3_ENDPOINT"
+)
+
 type indexConfig struct {
-	FSDir    string
-	ZipPath  string
-	S3Bucket string
-	S3Path   string
+	FSDir      string
+	ZipPath    string
+	S3Bucket   string
+	S3Path     string
+	S3Endpoint string
 	// rest is set during setupFS
 	fs      fs.FS
 	rootDir string
@@ -65,16 +75,23 @@ func init() {
 }
 
 func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
-	idx, err := openIndex(ctx, dbName)
+	// load env variables
+	c.S3Endpoint = getenvDefault(envS3Endpoint, "")
+
+	db, err := sql.Open("sqlite", "file:"+dbName)
 	if err != nil {
 		return err
 	}
-	defer idx.Close()
+	defer db.Close()
+	idx, err := prepareIndex(ctx, db)
+	if err != nil {
+		return err
+	}
 	major, minor, err := idx.GetSchemaVersion(ctx)
 	if err != nil {
 		return err
 	}
-	log.Printf("indexing to %s, schema: v%d.%d", dbName, major, minor)
+	fmt.Printf("indexing to %s, schema: v%d.%d\n", dbName, major, minor)
 	if err := setupFS(c); err != nil {
 		return err
 	}
@@ -83,16 +100,19 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	}
 	store, err := ocflv1.GetStore(ctx, c.fs, c.rootDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading storage root: %w", err)
 	}
+	fmt.Print("scanning for objects...")
 	objPaths, err := store.ScanObjects(ctx)
 	if err != nil {
+		fmt.Println("")
 		return err
 	}
 	total := len(objPaths)
+	fmt.Println("found", total)
 	i := 0
 	for objPath := range objPaths {
-		obj, err := ocflv1.GetObject(ctx, c.fs, objPath)
+		obj, err := store.GetPath(ctx, objPath)
 		if err != nil {
 			return err
 		}
@@ -125,6 +145,10 @@ func setupFS(c *indexConfig) error {
 		if err != nil {
 			return err
 		}
+		sess.Config.S3ForcePathStyle = aws.Bool(true)
+		if c.S3Endpoint != "" {
+			sess.Config.Endpoint = aws.String(c.S3Endpoint)
+		}
 		c.fs = s3fs.New(s3.New(sess), c.S3Bucket)
 		c.rootDir = c.S3Path
 	} else {
@@ -132,4 +156,11 @@ func setupFS(c *indexConfig) error {
 		c.rootDir = "."
 	}
 	return nil
+}
+
+func getenvDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
