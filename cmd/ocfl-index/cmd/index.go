@@ -5,7 +5,6 @@ Copyright © 2022
 package cmd
 
 import (
-	"archive/zip"
 	"context"
 	"database/sql"
 	"fmt"
@@ -31,7 +30,6 @@ const (
 
 type indexConfig struct {
 	FSDir      string
-	ZipPath    string
 	S3Bucket   string
 	S3Path     string
 	S3Endpoint string
@@ -62,9 +60,6 @@ func init() {
 	rootCmd.AddCommand(indexCmd)
 	indexCmd.Flags().StringVarP(
 		&indexFlags.FSDir, "dir", "d", ".", "path to storage root directory",
-	)
-	indexCmd.PersistentFlags().StringVarP(
-		&indexFlags.ZipPath, "zip", "z", "", "path to storage root zip file",
 	)
 	indexCmd.PersistentFlags().StringVar(
 		&indexFlags.S3Bucket, "s3-bucket", "", "s3 bucket for storage root",
@@ -132,15 +127,8 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 }
 
 func setupFS(c *indexConfig) error {
-	if c.ZipPath != "" {
-		zipFS, err := zip.OpenReader(c.ZipPath)
-		if err != nil {
-			return err
-		}
-		c.fs = zipFS
-		c.rootDir = "."
-		c.closer = zipFS
-	} else if c.S3Bucket != "" && c.S3Path != "" {
+	if c.S3Bucket != "" && c.S3Path != "" {
+		log.Printf("using S3 bucket=%s path=%s\n", c.S3Bucket, c.S3Path)
 		sess, err := session.NewSession()
 		if err != nil {
 			return err
@@ -152,6 +140,7 @@ func setupFS(c *indexConfig) error {
 		c.fs = s3fs.New(s3.New(sess), c.S3Bucket)
 		c.rootDir = c.S3Path
 	} else {
+		log.Printf("using FS dir=%s\n", c.FSDir)
 		c.fs = os.DirFS(c.FSDir)
 		c.rootDir = "."
 	}
