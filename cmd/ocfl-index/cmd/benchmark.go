@@ -58,19 +58,20 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 	if err != nil {
 		return err
 	}
-	fmt.Printf("indexing %d generated inventories (1-3 versions, %d files/version)\n", numinv, size)
-	sampleInvN := rand.Intn(numinv) + 1
+	fmt.Printf("indexing %d generated inventories (1-4 versions, %d files/version)\n", numinv, size)
+	rand.Seed(time.Now().UnixNano())
+	sampleInvN := rand.Intn(numinv) // inventory to query later
 	var sampleInv *ocflv1.Inventory
 	var timer, avgTime float64
 	var i int
 	for i = 0; i < numinv; i++ {
 		inv := testinv.GenInv(&testinv.GenInvConf{
-			ID:       fmt.Sprintf("test-%d", i),
-			Head:     object.V(rand.Intn(2) + 1),
+			ID:       fmt.Sprintf("http://test-object-%d", i),
+			Head:     object.V(rand.Intn(4) + 1),
 			Numfiles: size,
 			Del:      .05, // delete .05 of files with each version
-			Add:      .05, // modify .05 of files remaining
-			Mod:      .05, // add .05 new random file
+			Mod:      .05, // modify .05 of files remaining after delete
+			Add:      .05, // add .05 new random files
 		})
 		if i == sampleInvN {
 			sampleInv = inv

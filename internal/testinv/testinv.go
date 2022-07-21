@@ -86,7 +86,6 @@ func randomModifyState(dm *digest.Map, del, mod, add float64) *digest.Map {
 
 // randomState returns digest.Map with num files with random paths
 func randomState(num int) *digest.Map {
-	rand.Seed(time.Now().UnixNano())
 	dm := digest.NewMap()
 	prevDir := "."
 	prevSum := ""
@@ -116,7 +115,6 @@ func randomState(num int) *digest.Map {
 }
 
 func sampleDigestMap(dm *digest.Map, ratio float64) (*digest.Map, *digest.Map) {
-	rand.Seed(time.Now().UnixNano())
 	samp := digest.NewMap()
 	remain := digest.NewMap()
 	pathDigest := dm.AllPaths()

@@ -65,7 +65,7 @@ func TestIndexInventory(t *testing.T) {
 	for i := 0; i < len(invs); i++ {
 		invs[i] = testinv.GenInv(&testinv.GenInvConf{
 			ID:       fmt.Sprintf("test-%d", i),
-			Head:     object.V(rand.Intn(2) + 1),
+			Head:     object.V(rand.Intn(3) + 1), // 1-3 versions
 			Numfiles: 10,
 			Del:      .05, // delete .05 of files with each version
 			Add:      .05, // modify .05 of files remaining
@@ -90,14 +90,12 @@ func TestIndexInventory(t *testing.T) {
 		}
 		for _, vnum := range inv.VNums() {
 			vstate := inv.VState(vnum)
-
 			// created
 			idxCreated := vers[vnum.Num()-1].Created.Unix()
 			expCreated := vstate.Created.Unix()
 			if idxCreated != expCreated {
 				t.Fatalf("indexed version date doesn't match: %v, not %v", idxCreated, expCreated)
 			}
-
 			// mesage
 			idxMessage := vers[vnum.Num()-1].Message
 			expMessage := vstate.Message
