@@ -28,8 +28,15 @@ var benchmarkFlags = struct {
 // benchmarkCmd represents the benchmark command
 var benchmarkCmd = &coral.Command{
 	Use:   "benchmark",
-	Short: "benchmarks indexing with generated inventories",
-	Long:  ``,
+	Short: "benchmark indexing with generated inventories",
+	Long: `The benchmark command generates inventories, indexes them, and measures
+	the average time to complete the indexing process. In the process, one
+	inventory is randomly selected for querying; all paths in all versions of
+	the inventory are queried and the average time is measured. You can
+	specify the number of inventories to generate with the'num' flag and the
+	number of files in each inventory (version) with the 'size' flag.
+	Generated inventories have between 1 and 4 versions, with small
+	additions, modifications, and deletions between each version.`,
 	Run: func(cmd *coral.Command, args []string) {
 		if strings.Index(benchmarkFlags.file, "%d") > 0 {
 			benchmarkFlags.file = fmt.Sprintf(benchmarkFlags.file, time.Now().Unix())
@@ -61,6 +68,7 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 	fmt.Printf("indexing %d generated inventories (1-4 versions, %d files/version)\n", numinv, size)
 	rand.Seed(time.Now().UnixNano())
 	sampleInvN := rand.Intn(numinv) // inventory to query later
+	totalTimer := time.Now()
 	var sampleInv *ocflv1.Inventory
 	var timer, avgTime float64
 	var i int
@@ -82,12 +90,12 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 		}
 		timer += time.Since(indexStart).Seconds()
 		avgTime = timer / float64(i+1)
-		fmt.Printf("\rindexed %d/%d in %02f sec. avg", i+1, numinv, avgTime)
+		fmt.Printf("\rindexed %d/%d (%.2f sec/op avg)", i+1, numinv, avgTime)
 		if err := inv.Validate().Err(); err != nil {
 			return err
 		}
 	}
-	fmt.Printf("\nbenchmarking index queries ...\n")
+	fmt.Println()
 	i = 0
 	timer = 0
 	for _, vnum := range sampleInv.VNums() {
@@ -103,6 +111,7 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 			avgTime = timer / float64(i)
 		}
 	}
-	fmt.Printf("queried #%d paths, %02f sec./query\n", i, avgTime)
+	fmt.Printf("queried %d paths (%.4f sec/op avg)\n", i, avgTime)
+	fmt.Printf("benchmark complete in %.1f sec\n", time.Since(totalTimer).Seconds())
 	return nil
 }

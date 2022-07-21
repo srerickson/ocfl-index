@@ -21,9 +21,15 @@ var queryFlags = struct {
 
 // queryCmd represents the query command
 var queryCmd = &coral.Command{
-	Use:   "query",
+	Use:   "query [object-id] [path]",
 	Short: "query the index",
-	Long:  `Use query to query an existing index on the command line`,
+	Long: `The query command queries an existing index. The path should be a
+	relative path (using '/' as a separator) referencing a file or directory
+	in the object. Without any arguments, query lists all objects in the
+	index. If only the object-id is specified, the object's versions are
+	listed. With both an object-id and path, query prints information about
+	the given path: for files, the manifest entry for the corresponding
+	content is returned; for directories, the directing listing is returned.`,
 	Run: func(cmd *coral.Command, args []string) {
 		err := DoQuery(cmd.Context(), dbName, args)
 		if err != nil {

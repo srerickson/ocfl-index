@@ -45,9 +45,8 @@ var indexFlags indexConfig
 var indexCmd = &coral.Command{
 	Use:   "index",
 	Short: "index an OCFL storage root",
-	Long: `The index command indexes all objects in an OCFL storage root to the
-	logical path level. The index is written to a sqlite3 database specified
-	with the output option.`,
+	Long: `The index command indexes all objects in a specified OCFL storage root.
+	The index file will be created if it does not exist.`,
 	Run: func(cmd *coral.Command, args []string) {
 		err := DoIndex(cmd.Context(), dbName, &indexFlags)
 		if err != nil {
