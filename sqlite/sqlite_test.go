@@ -78,26 +78,26 @@ func TestIndexInventory(t *testing.T) {
 	}
 	// check inventor is indexed
 	for _, inv := range invs {
-		vers, err := idx.GetVersions(ctx, inv.ID)
+		verRes, err := idx.GetVersions(ctx, inv.ID)
 		if err != nil {
 			t.Fatal(inv.ID, err)
 		}
-		if l := len(vers); l != inv.Head.Num() {
-			for i := range vers {
-				t.Log(vers[i].Num)
+		if l := len(verRes.Versions); l != inv.Head.Num() {
+			for i := range verRes.Versions {
+				t.Log(verRes.Versions[i].Num)
 			}
 			t.Fatalf("expected %d versions, got %d", inv.Head.Num(), l)
 		}
 		for _, vnum := range inv.VNums() {
 			vstate := inv.VState(vnum)
 			// created
-			idxCreated := vers[vnum.Num()-1].Created.Unix()
+			idxCreated := verRes.Versions[vnum.Num()-1].Created.Unix()
 			expCreated := vstate.Created.Unix()
 			if idxCreated != expCreated {
 				t.Fatalf("indexed version date doesn't match: %v, not %v", idxCreated, expCreated)
 			}
 			// mesage
-			idxMessage := vers[vnum.Num()-1].Message
+			idxMessage := verRes.Versions[vnum.Num()-1].Message
 			expMessage := vstate.Message
 			if idxMessage != expMessage {
 				t.Fatalf("indexed version message doesn't match: %v, not %v", idxMessage, expMessage)
@@ -110,14 +110,14 @@ func TestIndexInventory(t *testing.T) {
 				}
 				var foundContent bool
 				for _, cpath := range cpaths {
-					if cpath == entry.ContentPath {
+					if cpath == entry.Content.ContentPath {
 						foundContent = true
 						break
 					}
 				}
 				if !foundContent {
 					t.Fatalf("GetContent didn't return expected content path for %s, %s, %s: %s not in %s",
-						inv.ID, vnum, lpath, entry.ContentPath, strings.Join(cpaths, ", "))
+						inv.ID, vnum, lpath, entry.Content.ContentPath, strings.Join(cpaths, ", "))
 				}
 			}
 

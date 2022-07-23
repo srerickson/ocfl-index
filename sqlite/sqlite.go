@@ -111,7 +111,7 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	return tx.Commit()
 }
 
-func (idx *Index) AllObjects(ctx context.Context) ([]*index.ObjectMeta, error) {
+func (idx *Index) AllObjects(ctx context.Context) (*index.ObjectsResult, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx)
 	if err != nil {
@@ -128,10 +128,13 @@ func (idx *Index) AllObjects(ctx context.Context) ([]*index.ObjectMeta, error) {
 		obj.ID = rows[i].Uri
 		objects[i] = obj
 	}
-	return objects, nil
+	result := &index.ObjectsResult{
+		Objects: objects,
+	}
+	return result, nil
 }
 
-func (idx *Index) GetVersions(ctx context.Context, objID string) ([]*index.VersionMeta, error) {
+func (idx *Index) GetVersions(ctx context.Context, objID string) (*index.VersionsResult, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjectVersions(ctx, objID)
 	if err != nil {
@@ -155,64 +158,81 @@ func (idx *Index) GetVersions(ctx context.Context, objID string) ([]*index.Versi
 		}
 		vers[i] = ver
 	}
-	return vers, nil
+	result := &index.VersionsResult{
+		ID:       objID,
+		Versions: vers,
+	}
+	return result, nil
 }
 
-func (db *Index) GetContent(ctx context.Context, objID string, vnum object.VNum, p string) (*index.ContentMeta, error) {
+func (db *Index) GetContent(ctx context.Context, objID string, vnum object.VNum, p string) (*index.ContentResult, error) {
 	p = path.Clean(p)
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
 	}
 	var (
-		cont  index.ContentMeta
+		fullP = path.Join(vnum.String(), p)
 		qry   = sqlc.New(&db.DB)
 		intID int64 // internal sql id
 		sum   []byte
+		errFn = func(err error) error {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%s: %s: %w", objID, fullP, index.ErrNotFound)
+			}
+			return fmt.Errorf("%s: %s: %w", objID, fullP, err)
+		}
+		result = index.ContentResult{
+			ID:      objID,
+			Path:    p,
+			Version: vnum,
+			Content: &index.ContentMeta{},
+		}
 	)
 	if p == "." {
-		// different query for object's direct children
+		// the sql query for the root node is different
 		row, err := qry.ObjectVersionNode(ctx, sqlc.ObjectVersionNodeParams{
 			Uri:  objID,
 			Name: vnum.String(),
 		})
 		if err != nil {
-			return nil, err
+			return nil, errFn(err)
 		}
 		intID = row.ID
 		sum = row.Sum
-		cont.IsDir = row.Dir
+		result.Content.IsDir = row.Dir
 	} else {
-		fullP := path.Join(vnum.String(), p)
-		args := []any{objID, fullP}
-		row := db.QueryRowContext(ctx, queryGetPathNode, args...)
-		if err := row.Scan(&intID, &sum, &cont.IsDir); err != nil {
-			return nil, fmt.Errorf("content for %s: %s: %w", objID, fullP, err)
+		// query to return the node corresponding to a (non-root) path
+		row := db.QueryRowContext(ctx, queryGetPathNode, objID, fullP)
+		if err := row.Scan(&intID, &sum, &result.Content.IsDir); err != nil {
+			return nil, errFn(err)
 		}
 	}
-	if cont.IsDir {
+	result.Content.Sum = hex.EncodeToString(sum)
+	if result.Content.IsDir {
 		rows, err := qry.NodeChildren(ctx, intID)
 		if err != nil {
-			return nil, err
+			return nil, errFn(err)
 		}
-		cont.Children = make([]index.DirEntry, len(rows))
+		result.Content.Children = make([]index.DirEntry, len(rows))
 		for i, r := range rows {
-			cont.Children[i] = index.DirEntry{
+			result.Content.Children[i] = index.DirEntry{
 				IsDir: r.Dir,
 				Name:  r.Name,
 			}
 		}
-		return &cont, nil
+		return &result, nil
 	}
 	p, err := qry.GetContentPath(ctx, sqlc.GetContentPathParams{
 		Uri: objID,
 		Sum: sum,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("content for %d: %s: %w", intID, sum, err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("content path for %s: %s: %w", objID, fullP, index.ErrMissingValue)
+		}
 	}
-	cont.ContentPath = p
-
-	return &cont, nil
+	result.Content.ContentPath = p
+	return &result, nil
 }
 
 func (db *Index) GetSchemaVersion(ctx context.Context) (int, int, error) {

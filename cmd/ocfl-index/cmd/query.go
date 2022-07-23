@@ -7,17 +7,27 @@ package cmd
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
+	"os"
+	"time"
 
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl/object"
 )
 
-var queryFlags = struct {
-	version string
-}{}
+const defaultVersion = "HEAD"
+
+type queryConfig struct {
+	objectID   string
+	path       string
+	version    string
+	vnum       object.VNum
+	jsonOutput bool
+}
+
+var queryFlags queryConfig
 
 // queryCmd represents the query command
 var queryCmd = &coral.Command{
@@ -31,7 +41,19 @@ var queryCmd = &coral.Command{
 	the given path: for files, the manifest entry for the corresponding
 	content is returned; for directories, the directing listing is returned.`,
 	Run: func(cmd *coral.Command, args []string) {
-		err := DoQuery(cmd.Context(), dbName, args)
+		if len(args) > 0 {
+			queryFlags.objectID = args[0]
+		}
+		if len(args) > 1 {
+			queryFlags.path = args[1]
+		}
+		if queryFlags.version != defaultVersion {
+			err := object.ParseVNum(queryFlags.version, &queryFlags.vnum)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		err := DoQuery(cmd.Context(), dbName, &queryFlags)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -40,10 +62,11 @@ var queryCmd = &coral.Command{
 
 func init() {
 	rootCmd.AddCommand(queryCmd)
-	queryCmd.Flags().StringVarP(&queryFlags.version, "ver", "v", "HEAD", "version to query")
+	queryCmd.Flags().StringVarP(&queryFlags.version, "ver", "v", defaultVersion, "version to query")
+	queryCmd.Flags().BoolVar(&queryFlags.jsonOutput, "json", false, "json output")
 }
 
-func DoQuery(ctx context.Context, dbName string, args []string) error {
+func DoQuery(ctx context.Context, dbName string, c *queryConfig) error {
 	db, err := sql.Open("sqlite", "file:"+dbName)
 	if err != nil {
 		return err
@@ -53,51 +76,64 @@ func DoQuery(ctx context.Context, dbName string, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer idx.Close()
-	if len(args) == 0 {
-		objs, err := idx.AllObjects(ctx)
+	if c.objectID == "" && c.path == "" {
+		// list all objects
+		objRes, err := idx.AllObjects(ctx)
 		if err != nil {
 			return err
 		}
-		for _, o := range objs {
-			fmt.Println(o.ID, o.Head, o.HeadCreated)
+		if c.jsonOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent(``, ` `)
+			return enc.Encode(objRes)
+		}
+		for _, o := range objRes.Objects {
+			fmt.Printf("%s, %s, %s\n", o.ID, o.Head, o.HeadCreated.UTC().Truncate(time.Second))
 		}
 		return nil
 	}
-	objID := args[0]
-	vers, err := idx.GetVersions(ctx, objID)
+	verRes, err := idx.GetVersions(ctx, c.objectID)
 	if err != nil {
 		return err
 	}
-	if len(vers) == 0 {
-		fmt.Println(objID, "has no versions!")
+	if len(verRes.Versions) == 0 {
+		return fmt.Errorf("object has not versions")
 	}
 	// list versions in object
-	if len(args) == 1 {
-		for _, v := range vers {
+	if c.path == "" {
+		if c.jsonOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent(``, ` `)
+			return enc.Encode(verRes)
+		}
+		for _, v := range verRes.Versions {
 			fmt.Println(v.Num, v.Created)
 		}
 		return nil
 	}
 	// list contents of vnum/path
-	lpath := args[1]
-	vnum := vers[len(vers)-1].Num
-	if !strings.EqualFold("head", queryFlags.version) {
-		err = object.ParseVNum(queryFlags.version, &vnum)
-		if err != nil {
-			return fmt.Errorf("%s: %w", queryFlags.version, err)
-		}
+	if c.vnum.Empty() {
+		c.vnum = verRes.Versions[len(verRes.Versions)-1].Num
 	}
-	cont, err := idx.GetContent(ctx, objID, vnum, lpath)
+	contRes, err := idx.GetContent(ctx, c.objectID, c.vnum, c.path)
 	if err != nil {
 		return err
 	}
-	if !cont.IsDir {
-		fmt.Println(cont.ContentPath)
+	if c.jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent(``, ` `)
+		return enc.Encode(contRes)
+	}
+	if !contRes.Content.IsDir {
+		fmt.Println(contRes.Content.ContentPath)
 		return nil
 	}
-	for _, c := range cont.Children {
-		fmt.Println(c.Name, c.IsDir)
+	for _, c := range contRes.Content.Children {
+		if c.IsDir {
+			fmt.Println(c.Name + "/")
+			continue
+		}
+		fmt.Println(c.Name)
 	}
 	return nil
 }
