@@ -29,8 +29,8 @@ var (
 	//go:embed schema.sql
 	querySchema string
 
-	//go:embed find_path_node.sql
-	queryGetPathNode string
+	//go:embed get_path_object.sql
+	queryGetPathObject string
 
 	queryListTables string = `SELECT name FROM sqlite_master WHERE type='table';`
 )
@@ -54,7 +54,6 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	if err != nil {
 		return errFn(err)
 	}
-
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return errFn(err)
@@ -170,47 +169,31 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum object.VNum,
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
 	}
-	var (
-		fullP = path.Join(vnum.String(), p)
-		qry   = sqlc.New(&db.DB)
-		intID int64 // internal sql id
-		sum   []byte
-		errFn = func(err error) error {
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("%s: %s: %w", objID, fullP, index.ErrNotFound)
-			}
-			return fmt.Errorf("%s: %s: %w", objID, fullP, err)
+	var intID int64       // internal sql id
+	var cp sql.NullString // content path may be nil
+	fullP := path.Join(vnum.String(), p)
+	qry := sqlc.New(&db.DB)
+	errFn := func(err error) error {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%s: %s: %w", objID, fullP, index.ErrNotFound)
 		}
-		result = index.ContentResult{
-			ID:      objID,
-			Path:    p,
-			Version: vnum,
-			Content: &index.ContentMeta{},
-		}
-	)
-	if p == "." {
-		// the sql query for the root node is different
-		row, err := qry.ObjectVersionNode(ctx, sqlc.ObjectVersionNodeParams{
-			Uri:  objID,
-			Name: vnum.String(),
-		})
-		if err != nil {
-			return nil, errFn(err)
-		}
-		intID = row.ID
-		sum = row.Sum
-		result.Content.IsDir = row.Dir
-	} else {
-		// query to return the node corresponding to a (non-root) path
-		row := db.QueryRowContext(ctx, queryGetPathNode, objID, fullP)
-		if err := row.Scan(&intID, &sum, &result.Content.IsDir); err != nil {
-			return nil, errFn(err)
-		}
+		return fmt.Errorf("%s: %s: %w", objID, fullP, err)
 	}
-	result.Content.Sum = hex.EncodeToString(sum)
+	result := index.ContentResult{
+		ID:      objID,
+		Path:    p,
+		Version: vnum,
+		Content: &index.ContentMeta{},
+	}
+	row := db.QueryRowContext(ctx, queryGetPathObject, objID, fullP)
+	err := row.Scan(&intID, &result.Content.Sum, &result.Content.IsDir, &cp)
+	if err != nil {
+		return nil, errFn(err)
+	}
 	if result.Content.IsDir {
 		rows, err := qry.NodeChildren(ctx, intID)
 		if err != nil {
+			// require directory node to have children?
 			return nil, errFn(err)
 		}
 		result.Content.Children = make([]index.DirEntry, len(rows))
@@ -222,16 +205,10 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum object.VNum,
 		}
 		return &result, nil
 	}
-	p, err := qry.GetContentPath(ctx, sqlc.GetContentPathParams{
-		Uri: objID,
-		Sum: sum,
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("content path for %s: %s: %w", objID, fullP, index.ErrMissingValue)
-		}
+	if !cp.Valid {
+		return nil, fmt.Errorf("missing content path %s: %s: %w", objID, fullP, index.ErrMissingValue)
 	}
-	result.Content.ContentPath = p
+	result.Content.ContentPath = cp.String
 	return &result, nil
 }
 

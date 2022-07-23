@@ -76,7 +76,7 @@ func TestIndexInventory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// check inventor is indexed
+	// check inventory is indexed
 	for _, inv := range invs {
 		verRes, err := idx.GetVersions(ctx, inv.ID)
 		if err != nil {
@@ -102,7 +102,9 @@ func TestIndexInventory(t *testing.T) {
 			if idxMessage != expMessage {
 				t.Fatalf("indexed version message doesn't match: %v, not %v", idxMessage, expMessage)
 			}
-
+			if _, err := idx.GetContent(ctx, inv.ID, vnum, "."); err != nil {
+				t.Fatal(err)
+			}
 			for lpath, cpaths := range vstate.State {
 				entry, err := idx.GetContent(ctx, inv.ID, vnum, lpath)
 				if err != nil {

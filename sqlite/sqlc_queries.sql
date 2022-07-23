@@ -70,12 +70,6 @@ SELECT child.id, names.name, child.dir, child.sum FROM ocfl_index_nodes child
 INNER JOIN ocfl_index_names names ON child.id = names.node_id
 WHERE names.parent_id = ?;
 
--- name: ObjectVersionNode :one
-SELECT c.id, c.sum, c.dir FROM ocfl_index_nodes c
-INNER JOIN ocfl_index_names n ON c.id = n.node_id
-INNER JOIN ocfl_index_objects o ON n.parent_id = o.node_id
-WHERE o.uri = ? and n.name = ?;
-
 
 --
 -- Names

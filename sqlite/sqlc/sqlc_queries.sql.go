@@ -356,31 +356,6 @@ func (q *Queries) NodeChildren(ctx context.Context, parentID int64) ([]NodeChild
 	return items, nil
 }
 
-const objectVersionNode = `-- name: ObjectVersionNode :one
-SELECT c.id, c.sum, c.dir FROM ocfl_index_nodes c
-INNER JOIN ocfl_index_names n ON c.id = n.node_id
-INNER JOIN ocfl_index_objects o ON n.parent_id = o.node_id
-WHERE o.uri = ? and n.name = ?
-`
-
-type ObjectVersionNodeParams struct {
-	Uri  string
-	Name string
-}
-
-type ObjectVersionNodeRow struct {
-	ID  int64
-	Sum []byte
-	Dir bool
-}
-
-func (q *Queries) ObjectVersionNode(ctx context.Context, arg ObjectVersionNodeParams) (ObjectVersionNodeRow, error) {
-	row := q.db.QueryRowContext(ctx, objectVersionNode, arg.Uri, arg.Name)
-	var i ObjectVersionNodeRow
-	err := row.Scan(&i.ID, &i.Sum, &i.Dir)
-	return i, err
-}
-
 const updateObject = `-- name: UpdateObject :exec
 UPDATE ocfl_index_objects SET node_id = ?, head = ? WHERE id = ?
 `
