@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/aws/aws-sdk-go v1.43.25
 	github.com/muesli/coral v1.0.0
-	github.com/srerickson/ocfl v0.0.4
+	github.com/srerickson/ocfl v0.0.5
 	modernc.org/sqlite v1.17.3
 )
 
