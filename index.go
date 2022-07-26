@@ -9,6 +9,10 @@ import (
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
+// set during with build with
+// -ldflags -X 'github.com/srerickson/ocfl-index.Version=v0.0.X'
+var Version = "devel"
+
 var ErrNotFound = errors.New("not found")
 var ErrMissingValue = errors.New("missing value")
 

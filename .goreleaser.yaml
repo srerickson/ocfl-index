@@ -16,6 +16,8 @@ builds:
       - darwin
     goarch:
       - amd64
+    ldflags:
+      - -s -w -X 'github.com/srerickson/ocfl-index.Version={{.Version}}' -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
 
 archives:
   - replacements:
