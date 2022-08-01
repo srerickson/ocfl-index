@@ -1,2 +1,5 @@
 dist/
 **/.minio.sys
+testdata/minio/**
+!testdata/minio/.gitkeep
+**/*.sqlite
