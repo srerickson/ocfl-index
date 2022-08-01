@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/muesli/coral"
-	"github.com/srerickson/ocfl-index/internal/testinv"
+	"github.com/srerickson/ocfl-index/internal/ocfltest"
 	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
 )
@@ -73,7 +73,7 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 	var timer, avgTime float64
 	var i int
 	for i = 0; i < numinv; i++ {
-		inv := testinv.GenInv(&testinv.GenInvConf{
+		inv := ocfltest.GenInv(&ocfltest.GenInvConf{
 			ID:       fmt.Sprintf("http://test-object-%d", i),
 			Head:     object.V(rand.Intn(4) + 1),
 			Numfiles: size,

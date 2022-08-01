@@ -1,6 +1,6 @@
-// Package testinv provides functions for generating dummy inventories with
+// Package ocfltest provides functions for generating dummy inventories with
 // various properties.
-package testinv
+package ocfltest
 
 import (
 	"encoding/hex"
