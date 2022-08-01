@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -71,14 +70,14 @@ func init() {
 		&indexFlags.S3Path, "s3-path", "", "s3 path for storage root",
 	)
 	indexCmd.Flags().IntVar(
-		&indexFlags.Concurrency, "concurrency", runtime.GOMAXPROCS(-1), "number of concurrent operations duration indexing",
+		&indexFlags.Concurrency, "concurrency", 4, "number of concurrent operations duration indexing",
 	)
 }
 
 func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
+	log.Printf("ocfl-index %s", index.Version)
 	// load env variables
 	c.S3Endpoint = getenvDefault(envS3Endpoint, "")
-
 	db, err := sql.Open("sqlite", "file:"+dbName)
 	if err != nil {
 		return err
@@ -92,7 +91,6 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("ocfl-index %s", index.Version)
 	log.Printf("indexing to %s, ocfl-index schema: v%d.%d\n", dbName, major, minor)
 	if err := setupFS(c); err != nil {
 		return err
@@ -115,7 +113,7 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	}
 	total := len(objPaths)
 	startIndexing := time.Now()
-	log.Printf("scan finished in %.2f sec., indexing %d objects", time.Since(startScan).Seconds(), total)
+	log.Printf("scan finished in %.2f sec., indexing %d objects ...", time.Since(startScan).Seconds(), total)
 	i := 0
 	for objPath := range objPaths {
 		obj, err := store.GetPath(ctx, objPath)
@@ -131,6 +129,7 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 			return err
 		}
 		i++
+		fmt.Printf("\r%d/%d\r", i, total)
 	}
 	log.Printf("indexing finished in %.2f sec. (total time %.2f sec.)", time.Since(startIndexing).Seconds(), time.Since(startScan).Seconds())
 	return nil

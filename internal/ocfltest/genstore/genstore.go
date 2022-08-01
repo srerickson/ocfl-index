@@ -31,10 +31,7 @@ func main() {
 	flag.IntVar(&c.numFiles, "files", 10, "number of files in each generated object/inventory")
 	flag.IntVar(&c.numVers, "versions", 2, "max number of versions in each generated inventory")
 	flag.Parse()
-	c.S3Endpoint = envDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
-	envDefault("AWS_ACCESS_KEY_ID", "minioadmin")
-	envDefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
-	envDefault("AWS_REGION", "us-west-1")
+	c.S3Endpoint = envDefault("AWS_S3_ENDPOINT", "")
 	if err := doGenStore(&c); err != nil {
 		log.Fatal(err)
 	}
