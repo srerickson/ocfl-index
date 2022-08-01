@@ -12,11 +12,14 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"runtime"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/muesli/coral"
+	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl/backend/s3fs"
 	"github.com/srerickson/ocfl/ocflv1"
 )
@@ -29,10 +32,11 @@ const (
 )
 
 type indexConfig struct {
-	FSDir      string
-	S3Bucket   string
-	S3Path     string
-	S3Endpoint string
+	FSDir       string
+	S3Bucket    string
+	S3Path      string
+	S3Endpoint  string
+	Concurrency int
 	// rest is set during setupFS
 	fs      fs.FS
 	rootDir string
@@ -60,11 +64,14 @@ func init() {
 	indexCmd.Flags().StringVarP(
 		&indexFlags.FSDir, "dir", "d", ".", "path to storage root directory",
 	)
-	indexCmd.PersistentFlags().StringVar(
+	indexCmd.Flags().StringVar(
 		&indexFlags.S3Bucket, "s3-bucket", "", "s3 bucket for storage root",
 	)
-	indexCmd.PersistentFlags().StringVar(
+	indexCmd.Flags().StringVar(
 		&indexFlags.S3Path, "s3-path", "", "s3 path for storage root",
+	)
+	indexCmd.Flags().IntVar(
+		&indexFlags.Concurrency, "concurrency", runtime.GOMAXPROCS(-1), "number of concurrent operations duration indexing",
 	)
 }
 
@@ -85,7 +92,8 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("indexing to %s, schema: v%d.%d\n", dbName, major, minor)
+	log.Printf("ocfl-index %s", index.Version)
+	log.Printf("indexing to %s, ocfl-index schema: v%d.%d\n", dbName, major, minor)
 	if err := setupFS(c); err != nil {
 		return err
 	}
@@ -96,14 +104,18 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	if err != nil {
 		return fmt.Errorf("reading storage root: %w", err)
 	}
-	fmt.Print("scanning for objects...")
-	objPaths, err := store.ScanObjects(ctx)
+	log.Printf("starting object scan (concurrency=%d)", c.Concurrency)
+	startScan := time.Now()
+	objPaths, err := store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
+		Strict:      false,
+		Concurrency: c.Concurrency,
+	})
 	if err != nil {
-		fmt.Println("")
 		return err
 	}
 	total := len(objPaths)
-	fmt.Println("found", total)
+	startIndexing := time.Now()
+	log.Printf("scan finished in %.2f sec., indexing %d objects", time.Since(startScan).Seconds(), total)
 	i := 0
 	for objPath := range objPaths {
 		obj, err := store.GetPath(ctx, objPath)
@@ -119,9 +131,8 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 			return err
 		}
 		i++
-		fmt.Printf("\rindexed %d/%d objects", i, total)
 	}
-	fmt.Println("\ndone")
+	log.Printf("indexing finished in %.2f sec. (total time %.2f sec.)", time.Since(startIndexing).Seconds(), time.Since(startScan).Seconds())
 	return nil
 }
 
