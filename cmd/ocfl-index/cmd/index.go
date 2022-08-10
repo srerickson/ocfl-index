@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,6 +22,7 @@ import (
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl/backend/s3fs"
 	"github.com/srerickson/ocfl/ocflv1"
+	"github.com/srerickson/ocfl/spec"
 )
 
 const (
@@ -114,22 +116,9 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	total := len(objPaths)
 	startIndexing := time.Now()
 	log.Printf("scan finished in %.2f sec., indexing %d objects ...", time.Since(startScan).Seconds(), total)
-	i := 0
-	for objPath := range objPaths {
-		obj, err := store.GetPath(ctx, objPath)
-		if err != nil {
-			return err
-		}
-		inv, err := obj.Inventory(ctx)
-		if err != nil {
-			return err
-		}
-		err = idx.IndexInventory(ctx, inv)
-		if err != nil {
-			return err
-		}
-		i++
-		fmt.Printf("\r%d/%d\r", i, total)
+	err = indexStore(ctx, idx, store, objPaths, c.Concurrency)
+	if err != nil {
+		return err
 	}
 	log.Printf("indexing finished in %.2f sec. (total time %.2f sec.)", time.Since(startIndexing).Seconds(), time.Since(startScan).Seconds())
 	return nil
@@ -161,4 +150,72 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// concurrent indexing for objects paths in store
+func indexStore(ctx context.Context, idx index.Interface, store *ocflv1.Store, paths map[string]spec.Num, workers int) error {
+	type job struct {
+		path string
+		inv  *ocflv1.Inventory
+		err  error
+	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+	in := make(chan (*job))
+	go func() {
+		defer close(in)
+	L:
+		for p := range paths {
+			select {
+			case in <- &job{path: p}:
+			case <-ctx.Done():
+				break L
+			}
+		}
+	}()
+	out := make(chan (*job))
+	wg := sync.WaitGroup{}
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for j := range in {
+				obj, err := store.GetPath(ctx, j.path)
+				if err != nil {
+					j.err = err
+					out <- j
+					continue
+				}
+				j.inv, err = obj.Inventory(ctx)
+				if err != nil {
+					j.err = err
+					out <- j
+					continue
+				}
+				out <- j
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	var returnErr error
+	var i int
+	total := len(paths)
+	for j := range out {
+		i++
+		if j.err != nil {
+			returnErr = j.err
+			break
+		}
+		err := idx.IndexInventory(ctx, j.inv)
+		if err != nil {
+			returnErr = j.err
+			break
+		}
+		fmt.Printf("\r%d/%d\r", i, total)
+	}
+	cancel()
+	return returnErr
 }
