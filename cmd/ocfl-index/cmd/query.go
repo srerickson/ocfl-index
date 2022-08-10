@@ -33,13 +33,13 @@ var queryFlags queryConfig
 var queryCmd = &coral.Command{
 	Use:   "query [object-id] [path]",
 	Short: "query the index",
-	Long: `The query command queries an existing index. The path should be a
-	relative path (using '/' as a separator) referencing a file or directory
-	in the object. Without any arguments, query lists all objects in the
-	index. If only the object-id is specified, the object's versions are
-	listed. With both an object-id and path, query prints information about
-	the given path: for files, the manifest entry for the corresponding
-	content is returned; for directories, the directing listing is returned.`,
+	Long: `The query command queries an existing index. The path should be a relative
+path (using '/' as a separator) referencing a file or directory in the
+object's logical state. Without any arguments, query lists all objects in the
+index. If only the object-id is specified, the object's versions are listed.
+With both an object-id and path, query prints information about the given
+path: for files, the manifest entry for the corresponding content is
+returned; for directories, the directing listing is returned.`,
 	Run: func(cmd *coral.Command, args []string) {
 		if len(args) > 0 {
 			queryFlags.objectID = args[0]

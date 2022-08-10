@@ -29,14 +29,14 @@ var benchmarkFlags = struct {
 var benchmarkCmd = &coral.Command{
 	Use:   "benchmark",
 	Short: "benchmark indexing with generated inventories",
-	Long: `The benchmark command generates inventories, indexes them, and measures
-	the average time to complete the indexing process. In the process, one
-	inventory is randomly selected for querying; all paths in all versions of
-	the inventory are queried and the average time is measured. You can
-	specify the number of inventories to generate with the'num' flag and the
-	number of files in each inventory (version) with the 'size' flag.
-	Generated inventories have between 1 and 4 versions, with small
-	additions, modifications, and deletions between each version.`,
+	Long: `The benchmark command generates inventories, indexes them, and measures the
+average time to complete the indexing process. In the process, one inventory
+is randomly selected for querying; all paths in all versions of the inventory
+are queried and the average time is measured. You can specify the number of
+inventories to generate with the num flag and the number of files in each
+inventory (version) with the size flag. Generated inventories have between
+1 and 4 versions, with small additions, modifications, and deletions between
+each version.`,
 	Run: func(cmd *coral.Command, args []string) {
 		if strings.Index(benchmarkFlags.file, "%d") > 0 {
 			benchmarkFlags.file = fmt.Sprintf(benchmarkFlags.file, time.Now().Unix())
