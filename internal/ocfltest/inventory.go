@@ -10,15 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl/digest"
-	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
-	"github.com/srerickson/ocfl/spec"
 )
 
 type GenInvConf struct {
 	ID       string
-	Head     object.VNum
+	Head     ocfl.VNum
 	Numfiles int
 	Add      float64
 	Mod      float64
@@ -27,15 +26,15 @@ type GenInvConf struct {
 
 func GenInv(conf *GenInvConf) *ocflv1.Inventory {
 	inv := &ocflv1.Inventory{
-		Type:            spec.MustParse("1.0").AsInventoryType(),
+		Type:            ocfl.MustParseSpec("1.0").AsInvType(),
 		ID:              conf.ID,
 		Head:            conf.Head,
 		DigestAlgorithm: digest.SHA256,
 		Manifest:        digest.NewMap(),
-		Versions:        map[object.VNum]*ocflv1.Version{},
+		Versions:        map[ocfl.VNum]*ocflv1.Version{},
 	}
 	state := randomState(conf.Numfiles)
-	vnum := object.V0
+	vnum := ocfl.V0
 	for vnum.Num() < conf.Head.Num() {
 		vnum, _ = vnum.Next()
 		inv.Versions[vnum] = &ocflv1.Version{

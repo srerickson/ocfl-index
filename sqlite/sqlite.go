@@ -11,10 +11,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/internal/digest"
 	"github.com/srerickson/ocfl-index/sqlite/sqlc"
-	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -120,7 +120,7 @@ func (idx *Index) AllObjects(ctx context.Context) (*index.ObjectsResult, error) 
 	for i := range rows {
 		obj := &index.ObjectMeta{}
 		obj.HeadCreated = rows[i].Created
-		err := object.ParseVNum(rows[i].Head, &obj.Head)
+		err := ocfl.ParseVNum(rows[i].Head, &obj.Head)
 		if err != nil {
 			return nil, err // head info in index is invalid
 		}
@@ -145,7 +145,7 @@ func (idx *Index) GetVersions(ctx context.Context, objID string) (*index.Version
 			Message: rows[i].Message,
 			Created: rows[i].Created,
 		}
-		err := object.ParseVNum(rows[i].Name, &ver.Num)
+		err := ocfl.ParseVNum(rows[i].Name, &ver.Num)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +164,7 @@ func (idx *Index) GetVersions(ctx context.Context, objID string) (*index.Version
 	return result, nil
 }
 
-func (db *Index) GetContent(ctx context.Context, objID string, vnum object.VNum, p string) (*index.ContentResult, error) {
+func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.ContentResult, error) {
 	p = path.Clean(p)
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
@@ -333,7 +333,7 @@ func getInsertNode(ctx context.Context, qry *sqlc.Queries, sum []byte, dir bool)
 	return id, false, nil
 }
 
-func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, uri string, nodeID int64, head object.VNum) (int64, bool, error) {
+func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, uri string, nodeID int64, head ocfl.VNum) (int64, bool, error) {
 	obj, err := qry.GetObjectURI(ctx, uri)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {

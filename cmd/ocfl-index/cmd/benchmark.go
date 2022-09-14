@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/muesli/coral"
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
-	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -75,7 +75,7 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 	for i = 0; i < numinv; i++ {
 		inv := ocfltest.GenInv(&ocfltest.GenInvConf{
 			ID:       fmt.Sprintf("http://test-object-%d", i),
-			Head:     object.V(rand.Intn(4) + 1),
+			Head:     ocfl.V(rand.Intn(4) + 1),
 			Numfiles: size,
 			Del:      .05, // delete .05 of files with each version
 			Mod:      .05, // modify .05 of files remaining after delete

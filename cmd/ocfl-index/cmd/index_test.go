@@ -2,17 +2,53 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/srerickson/ocfl"
 )
+
+var testDir = filepath.Join(`..`, `..`, `..`, `testdata`, `simple-root`)
+
+func createS3Root(ctx context.Context, conf indexConfig) error {
+	// create bucket with test data
+	if err := setupFS(ctx, &conf); err != nil {
+		return err
+	}
+	if conf.closer != nil {
+		defer conf.closer.Close()
+	}
+	writefs, ok := conf.fs.(ocfl.WriteFS)
+	if !ok {
+		return errors.New("failed to set up test storage root")
+	}
+	srcFS := os.DirFS(testDir)
+	return fs.WalkDir(srcFS, ".", func(name string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !e.Type().IsRegular() {
+			return nil
+		}
+		f, err := srcFS.Open(name)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = writefs.Write(ctx, name, f)
+		return err
+	})
+}
 
 func TestDoIndex(t *testing.T) {
 	ctx := context.Background()
 	t.Run("local storage root", func(t *testing.T) {
-		testDir := filepath.Join(`..`, `..`, `..`, `testdata`, `simple-root`)
 		conf := indexConfig{
-			FSDir: testDir,
+			Driver: "fs",
+			Path:   testDir,
 		}
 		dbName := "test?mode=memory"
 		err := DoIndex(ctx, dbName, &conf)
@@ -36,13 +72,17 @@ func TestDoIndex(t *testing.T) {
 				os.Unsetenv(k)
 			}
 		}()
+		ctx := context.Background()
 		conf := indexConfig{
-			S3Bucket: "ocfl-test",
-			S3Path:   "simple-root",
+			Driver: "s3",
+			Bucket: "simple-root",
+			Path:   ".",
 		}
 		dbName := "test?mode=memory"
-		err := DoIndex(ctx, dbName, &conf)
-		if err != nil {
+		if err := createS3Root(ctx, conf); err != nil {
+			t.Fatal(err)
+		}
+		if err := DoIndex(ctx, dbName, &conf); err != nil {
 			t.Fatal(err)
 		}
 	})

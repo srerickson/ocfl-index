@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
-	"github.com/srerickson/ocfl/backend/s3fs"
+	"github.com/srerickson/ocfl/backend/cloud"
 	"github.com/srerickson/ocfl/extensions"
 	"github.com/srerickson/ocfl/ocflv1"
+	"gocloud.dev/blob/s3blob"
 )
 
 type config struct {
@@ -38,6 +39,7 @@ func main() {
 }
 
 func doGenStore(c *config) error {
+	ctx := context.Background()
 	log.Printf("using S3 bucket=%s path=%s\n", c.S3Bucket, c.S3Path)
 	sess, err := session.NewSession()
 	if err != nil {
@@ -47,7 +49,11 @@ func doGenStore(c *config) error {
 	if c.S3Endpoint != "" {
 		sess.Config.Endpoint = aws.String(c.S3Endpoint)
 	}
-	fsys := s3fs.New(s3.New(sess), c.S3Bucket)
+	bucket, err := s3blob.OpenBucket(ctx, sess, c.S3Bucket, nil)
+	if err != nil {
+		return err
+	}
+	fsys := cloud.NewFS(bucket)
 
 	conf := ocfltest.GenStoreConf{
 		InvNumber:    c.numObjects,

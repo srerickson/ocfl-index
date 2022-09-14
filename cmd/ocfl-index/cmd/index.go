@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"sync"
@@ -17,12 +16,14 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/muesli/coral"
+	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl/backend/s3fs"
+	"github.com/srerickson/ocfl/backend/cloud"
 	"github.com/srerickson/ocfl/ocflv1"
-	"github.com/srerickson/ocfl/spec"
+	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/azureblob"
+	"gocloud.dev/blob/s3blob"
 )
 
 const (
@@ -33,13 +34,16 @@ const (
 )
 
 type indexConfig struct {
-	FSDir       string
-	S3Bucket    string
-	S3Path      string
-	S3Endpoint  string
+	// Backend configuration
+	Driver     string // backend driver (supported: "fs", "s3", "azure")
+	Bucket     string // Bucket/Container for s3 of azure fs types
+	Path       string // Path to storage root (default: ".")
+	S3Endpoint string // custom s3 endpoint
+
 	Concurrency int
+
 	// rest is set during setupFS
-	fs      fs.FS
+	fs      ocfl.FS
 	rootDir string
 	closer  io.Closer
 }
@@ -53,6 +57,7 @@ var indexCmd = &coral.Command{
 	Long: `The index command indexes all objects in a specified OCFL storage root. The
 index file will be created if it does not exist.`,
 	Run: func(cmd *coral.Command, args []string) {
+		log.Printf("ocfl-index %s", index.Version)
 		err := DoIndex(cmd.Context(), dbName, &indexFlags)
 		if err != nil {
 			log.Fatal(err)
@@ -62,14 +67,14 @@ index file will be created if it does not exist.`,
 
 func init() {
 	rootCmd.AddCommand(indexCmd)
-	indexCmd.Flags().StringVarP(
-		&indexFlags.FSDir, "dir", "d", ".", "path to storage root directory",
+	indexCmd.Flags().StringVar(
+		&indexFlags.Driver, "driver", "fs", "backend driver for accessing storage root ('fs', 's3', or 'azure')",
 	)
 	indexCmd.Flags().StringVar(
-		&indexFlags.S3Bucket, "s3-bucket", "", "s3 bucket for storage root",
+		&indexFlags.Bucket, "bucket", "", "bucket or container for storage root on S3 or Azure",
 	)
 	indexCmd.Flags().StringVar(
-		&indexFlags.S3Path, "s3-path", "", "s3 path for storage root",
+		&indexFlags.Path, "path", ".", "path for storage root (relative to driver settings)",
 	)
 	indexCmd.Flags().IntVar(
 		&indexFlags.Concurrency, "concurrency", 4, "number of concurrent operations duration indexing",
@@ -77,9 +82,6 @@ func init() {
 }
 
 func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
-	log.Printf("ocfl-index %s", index.Version)
-	// load env variables
-	c.S3Endpoint = getenvDefault(envS3Endpoint, "")
 	db, err := sql.Open("sqlite", "file:"+dbName)
 	if err != nil {
 		return err
@@ -94,7 +96,7 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 		return err
 	}
 	log.Printf("indexing to %s, ocfl-index schema: v%d.%d\n", dbName, major, minor)
-	if err := setupFS(c); err != nil {
+	if err := setupFS(ctx, c); err != nil {
 		return err
 	}
 	if c.closer != nil {
@@ -124,23 +126,41 @@ func DoIndex(ctx context.Context, dbName string, c *indexConfig) error {
 	return nil
 }
 
-func setupFS(c *indexConfig) error {
-	if c.S3Bucket != "" && c.S3Path != "" {
-		log.Printf("using S3 bucket=%s path=%s\n", c.S3Bucket, c.S3Path)
+func setupFS(ctx context.Context, c *indexConfig) error {
+	switch c.Driver {
+	case "fs":
+		log.Printf("using FS dir=%s\n", c.Path)
+		c.fs = ocfl.NewFS(os.DirFS(c.Path))
+		c.rootDir = "."
+	case "s3":
+		log.Printf("using S3 bucket=%s path=%s\n", c.Bucket, c.Path)
 		sess, err := session.NewSession()
 		if err != nil {
 			return err
 		}
 		sess.Config.S3ForcePathStyle = aws.Bool(true)
+		c.S3Endpoint = getenvDefault(envS3Endpoint, "")
 		if c.S3Endpoint != "" {
 			sess.Config.Endpoint = aws.String(c.S3Endpoint)
 		}
-		c.fs = s3fs.New(s3.New(sess), c.S3Bucket)
-		c.rootDir = c.S3Path
-	} else {
-		log.Printf("using FS dir=%s\n", c.FSDir)
-		c.fs = os.DirFS(c.FSDir)
-		c.rootDir = "."
+		bucket, err := s3blob.OpenBucket(ctx, sess, c.Bucket, nil)
+		if err != nil {
+			return err
+		}
+		c.fs = cloud.NewFS(bucket)
+		c.closer = bucket
+		c.rootDir = c.Path
+	case "azure":
+		log.Printf("using Azure container=%s path=%s\n", c.Bucket, c.Path)
+		bucket, err := blob.OpenBucket(ctx, "azblob://"+c.Bucket)
+		if err != nil {
+			return err
+		}
+		c.fs = cloud.NewFS(bucket)
+		c.closer = bucket
+		c.rootDir = c.Path
+	default:
+		return fmt.Errorf("unsupported storage driver %s", c.Driver)
 	}
 	return nil
 }
@@ -153,7 +173,7 @@ func getenvDefault(key, def string) string {
 }
 
 // concurrent indexing for objects paths in store
-func indexStore(ctx context.Context, idx index.Interface, store *ocflv1.Store, paths map[string]spec.Num, workers int) error {
+func indexStore(ctx context.Context, idx index.Interface, store *ocflv1.Store, paths map[string]ocfl.Spec, workers int) error {
 	type job struct {
 		path string
 		inv  *ocflv1.Inventory

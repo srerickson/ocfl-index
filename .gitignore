@@ -1,5 +1,6 @@
 dist/
-**/.minio.sys
 testdata/minio/**
-!testdata/minio/.gitkeep
+!testdata/minio/simple-root
+!testdata/minio/simple-root/.gitkeep
+
 **/*.sqlite

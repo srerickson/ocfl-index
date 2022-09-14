@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/muesli/coral"
-	"github.com/srerickson/ocfl/object"
+	"github.com/srerickson/ocfl"
 )
 
 const defaultVersion = "HEAD"
@@ -23,7 +23,7 @@ type queryConfig struct {
 	objectID   string
 	path       string
 	version    string
-	vnum       object.VNum
+	vnum       ocfl.VNum
 	jsonOutput bool
 }
 
@@ -48,7 +48,7 @@ returned; for directories, the directing listing is returned.`,
 			queryFlags.path = args[1]
 		}
 		if queryFlags.version != defaultVersion {
-			err := object.ParseVNum(queryFlags.version, &queryFlags.vnum)
+			err := ocfl.ParseVNum(queryFlags.version, &queryFlags.vnum)
 			if err != nil {
 				log.Fatal(err)
 			}

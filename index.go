@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/srerickson/ocfl/object"
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -23,7 +23,7 @@ type Interface interface {
 	IndexInventory(ctx context.Context, inv *ocflv1.Inventory) error
 	AllObjects(ctx context.Context) (*ObjectsResult, error)
 	GetVersions(ctx context.Context, objectID string) (*VersionsResult, error)
-	GetContent(ctx context.Context, objectID string, vnum object.VNum, name string) (*ContentResult, error)
+	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
 
 	// TODO
 	//DeleteObject(ctx context.Context, objectID string) error
@@ -48,7 +48,7 @@ type ContentResult struct {
 	// OCFL Object ID
 	ID string `json:"id"`
 	// Version number for content
-	Version object.VNum `json:"version"`
+	Version ocfl.VNum `json:"version"`
 	// Logical path of content
 	Path    string       `json:"path"`
 	Content *ContentMeta `json:"content"`
@@ -56,14 +56,14 @@ type ContentResult struct {
 
 // ObjectMeta represents indexed OCFL object metadata
 type ObjectMeta struct {
-	ID          string      `json:"id"`           // OCFL Object ID
-	Head        object.VNum `json:"head"`         // most recent version
-	HeadCreated time.Time   `json:"head_created"` // date of most recent version
+	ID          string    `json:"id"`           // OCFL Object ID
+	Head        ocfl.VNum `json:"head"`         // most recent version
+	HeadCreated time.Time `json:"head_created"` // date of most recent version
 }
 
 // VersionMeta represents indexed OCFL object version metadata
 type VersionMeta struct {
-	Num     object.VNum  `json:"id"`             // Version number
+	Num     ocfl.VNum    `json:"id"`             // Version number
 	Message string       `json:"message"`        // Version message
 	Created time.Time    `json:"created"`        // Version create datetime
 	User    *ocflv1.User `json:"user,omitempty"` // Version user information

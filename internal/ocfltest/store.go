@@ -11,12 +11,9 @@ import (
 	"path"
 	"time"
 
-	"github.com/srerickson/ocfl/backend"
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl/extensions"
-	"github.com/srerickson/ocfl/namaste"
-	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
-	"github.com/srerickson/ocfl/spec"
 )
 
 type GenStoreConf struct {
@@ -27,7 +24,8 @@ type GenStoreConf struct {
 	LayoutConfig extensions.Extension
 }
 
-func GenStore(fsys backend.Interface, dir string, conf *GenStoreConf) error {
+func GenStore(fsys ocfl.WriteFS, dir string, conf *GenStoreConf) error {
+	ctx := context.Background()
 	rand.Seed(time.Now().UnixMicro())
 	if conf == nil {
 		conf = &GenStoreConf{
@@ -36,7 +34,7 @@ func GenStore(fsys backend.Interface, dir string, conf *GenStoreConf) error {
 			VNumMax:   2,
 		}
 	}
-	dirs, err := fs.ReadDir(fsys, dir)
+	dirs, err := fsys.ReadDir(ctx, dir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -45,21 +43,21 @@ func GenStore(fsys backend.Interface, dir string, conf *GenStoreConf) error {
 	if len(dirs) > 0 {
 		return fmt.Errorf("%s is not empty", dir)
 	}
-	err = namaste.Declaration{
-		Type:    namaste.StoreType,
-		Version: spec.Num{1, 0}}.
-		Write(fsys, dir)
-	if err != nil {
+	decl := ocfl.Declaration{
+		Type:    ocfl.DeclStore,
+		Version: ocfl.Spec{1, 0},
+	}
+	if err := ocfl.WriteDeclaration(ctx, fsys, dir, decl); err != nil {
 		return err
 	}
 	if conf.Layout != nil {
-		if err := ocflv1.WriteLayout(fsys, dir, conf.Layout); err != nil {
+		if err := ocflv1.WriteLayout(ctx, fsys, dir, conf.Layout); err != nil {
 			return err
 		}
 	}
 	var layoutFunc extensions.LayoutFunc
 	if conf.LayoutConfig != nil {
-		if err := ocflv1.WriteExtensionConfig(fsys, dir, conf.LayoutConfig); err != nil {
+		if err := ocflv1.WriteExtensionConfig(ctx, fsys, dir, conf.LayoutConfig); err != nil {
 			return err
 		}
 		if layout, ok := conf.LayoutConfig.(extensions.Layout); ok {
@@ -73,7 +71,7 @@ func GenStore(fsys backend.Interface, dir string, conf *GenStoreConf) error {
 		id := fmt.Sprintf("http://inventory-%d", i)
 		invconf := &GenInvConf{
 			ID:       id,
-			Head:     object.V(rand.Intn(conf.VNumMax) + 1),
+			Head:     ocfl.V(rand.Intn(conf.VNumMax) + 1),
 			Numfiles: conf.InvSize,
 			Add:      0.1,
 			Del:      0.1,
@@ -90,11 +88,12 @@ func GenStore(fsys backend.Interface, dir string, conf *GenStoreConf) error {
 			invRoot = path.Join(dir, invRoot)
 		}
 		inv := GenInv(invconf)
-		err = object.WriteInventory(context.Background(), fsys, invRoot, inv.DigestAlgorithm, &inv)
+		err = ocflv1.WriteInventory(ctx, fsys, invRoot, inv)
 		if err != nil {
 			return err
 		}
-		err = namaste.Declaration{Type: namaste.ObjectType, Version: spec.Num{1, 0}}.Write(fsys, invRoot)
+		decl := ocfl.Declaration{Type: ocfl.DeclObject, Version: ocfl.Spec{1, 0}}
+		err := ocfl.WriteDeclaration(ctx, fsys, invRoot, decl)
 		if err != nil {
 			return err
 		}

@@ -1,8 +1,6 @@
 # ocfl-index
 
-`ocfl-index` is a command line tool for indexing [OCFL Storage Roots](https://ocfl.io). It can be used to index and query the [logical state](https://ocfl.io/1.0/spec/#dfn-logical-state) of objects in a storage root. The index is stored as a sqlite3 database (see `sqlite/schema.sql` for details). 
-
-*This is work in progress*. 
+`ocfl-index` is a command line tool for indexing [OCFL Storage Roots](https://ocfl.io). It supports access to the [logical](https://ocfl.io/1.0/spec/#dfn-logical-state) directory structure of OCFL Objects. The index is stored as a sqlite3 database (see `sqlite/schema.sql` for details). This is an experimental project and the command line interface should not be considered stable.
 
 ```
 Usage:
@@ -23,18 +21,27 @@ Use "ocfl-index [command] --help" for more information about a command.
 
 ## Indexing
 
-You can index OCFL storage roots on the local filesystem or an S3 object store.
+OCFL storage roots can be read from the local filesystem, S3 buckets, or Azure Blob containers.
 
 ```sh
 # index a storage root locally
-ocfl-index index --dir ~/my/root
+ocfl-index index --path ~/my/root
 
-# index a storage root on s3 (first set environment variables)
+# access settings
 export AWS_ACCESS_KEY_ID= ... 
 export AWS_SECRET_ACCESS_KEY=...
 export AWS_REGION=...
 export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
-ocfl-index index --s3-bucket my-bucket --s3-path store-prefix
+
+# index a storage root in an S3 bucket
+ocfl-index index --driver s3 --bucket my-bucket
+
+# index a storage root in an S3 bucket with a prefix
+ocfl-index index --driver s3 --bucket my-bucket --path my-prefix
+
+# index a storage root in an Azure Blob container
+ocfl-index index --driver azure --bucket my-container
+
 ```
 
 ## Querying

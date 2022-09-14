@@ -10,9 +10,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
 	"github.com/srerickson/ocfl-index/sqlite"
-	"github.com/srerickson/ocfl/object"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -65,7 +65,7 @@ func TestIndexInventory(t *testing.T) {
 	for i := 0; i < len(invs); i++ {
 		invs[i] = ocfltest.GenInv(&ocfltest.GenInvConf{
 			ID:       fmt.Sprintf("test-%d", i),
-			Head:     object.V(rand.Intn(3) + 1), // 1-3 versions
+			Head:     ocfl.V(rand.Intn(3) + 1), // 1-3 versions
 			Numfiles: 10,
 			Del:      .05, // delete .05 of files with each version
 			Add:      .05, // modify .05 of files remaining
