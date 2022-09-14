@@ -27,12 +27,6 @@ OCFL storage roots can be read from the local filesystem, S3 buckets, or Azure B
 # index a storage root locally
 ocfl-index index --path ~/my/root
 
-# access settings
-export AWS_ACCESS_KEY_ID= ... 
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_REGION=...
-export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
-
 # index a storage root in an S3 bucket
 ocfl-index index --driver s3 --bucket my-bucket
 
@@ -75,17 +69,18 @@ queried 99 paths (0.0004 sec/op avg)
 benchmark complete in 164.5 sec
 ```
 
-## S3 Config
+## S3 & Azure Config
 
-AWS credentials can be set with the `aws` cli. You may also use the following environment variables:
+Use environment variables to configure access settings for S3 and Azure:
 
 ```sh
-# Access Key ID
-AWS_ACCESS_KEY_ID= ... 
-# Secret Access Key
-AWS_SECRET_ACCESS_KEY=SECRET
-# Region
-AWS_REGION=us-east-1
-# for non-aws S3 endpoint
-AWS_S3_ENDPOINT="http://localhost:9000"
+# S3 access settings
+export AWS_ACCESS_KEY_ID= ... 
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION=...
+export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
+
+# Azure access settings
+ export AZURE_STORAGE_ACCOUNT=...
+ export AZURE_STORAGE_KEY=...
 ```
