@@ -1,6 +1,5 @@
 /*
 Copyright © 2022
-
 */
 package cmd
 
@@ -200,7 +199,7 @@ func indexStore(ctx context.Context, idx index.Interface, store *ocflv1.Store, p
 		go func() {
 			defer wg.Done()
 			for j := range in {
-				obj, err := store.GetPath(ctx, j.path)
+				obj, err := store.GetObjectPath(ctx, j.path)
 				if err != nil {
 					j.err = err
 					out <- j

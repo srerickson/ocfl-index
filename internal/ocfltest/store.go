@@ -2,12 +2,9 @@ package ocfltest
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"math/rand"
-	"net/url"
 	"path"
 	"time"
 
@@ -20,7 +17,7 @@ type GenStoreConf struct {
 	InvNumber    int
 	InvSize      int
 	VNumMax      int
-	Layout       *ocflv1.StoreLayout
+	Layout       extensions.Layout
 	LayoutConfig extensions.Extension
 }
 
@@ -34,39 +31,14 @@ func GenStore(fsys ocfl.WriteFS, dir string, conf *GenStoreConf) error {
 			VNumMax:   2,
 		}
 	}
-	dirs, err := fsys.ReadDir(ctx, dir)
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-	if len(dirs) > 0 {
-		return fmt.Errorf("%s is not empty", dir)
-	}
-	decl := ocfl.Declaration{
-		Type:    ocfl.DeclStore,
-		Version: ocfl.Spec{1, 0},
-	}
-	if err := ocfl.WriteDeclaration(ctx, fsys, dir, decl); err != nil {
+	if err := ocflv1.InitStore(ctx, fsys, dir, nil); err != nil {
 		return err
 	}
-	if conf.Layout != nil {
-		if err := ocflv1.WriteLayout(ctx, fsys, dir, conf.Layout); err != nil {
-			return err
-		}
+	store, err := ocflv1.GetStore(ctx, fsys, dir)
+	if err != nil {
+		return err
 	}
-	var layoutFunc extensions.LayoutFunc
-	if conf.LayoutConfig != nil {
-		if err := ocflv1.WriteExtensionConfig(ctx, fsys, dir, conf.LayoutConfig); err != nil {
-			return err
-		}
-		if layout, ok := conf.LayoutConfig.(extensions.Layout); ok {
-			layoutFunc, err = layout.NewFunc()
-			if err != nil {
-				return err
-			}
-		}
-	}
+
 	for i := 0; i < conf.InvNumber; i++ {
 		id := fmt.Sprintf("http://inventory-%d", i)
 		invconf := &GenInvConf{
@@ -77,23 +49,18 @@ func GenStore(fsys ocfl.WriteFS, dir string, conf *GenStoreConf) error {
 			Del:      0.1,
 			Mod:      0.1,
 		}
-		var invRoot string
-		if layoutFunc == nil {
-			invRoot = path.Join(dir, url.QueryEscape(id))
-		} else {
-			invRoot, err = layoutFunc(id)
-			if err != nil {
-				return err
-			}
-			invRoot = path.Join(dir, invRoot)
-		}
 		inv := GenInv(invconf)
-		err = ocflv1.WriteInventory(ctx, fsys, invRoot, inv)
+		invPath, err := store.ResolveID(invconf.ID)
+		if err != nil {
+			return err
+		}
+		invPath = path.Join(dir, invPath)
+		err = ocflv1.WriteInventory(ctx, fsys, inv, invPath)
 		if err != nil {
 			return err
 		}
 		decl := ocfl.Declaration{Type: ocfl.DeclObject, Version: ocfl.Spec{1, 0}}
-		err := ocfl.WriteDeclaration(ctx, fsys, invRoot, decl)
+		err = ocfl.WriteDeclaration(ctx, fsys, invPath, decl)
 		if err != nil {
 			return err
 		}

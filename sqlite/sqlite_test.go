@@ -88,41 +88,52 @@ func TestIndexInventory(t *testing.T) {
 			}
 			t.Fatalf("expected %d versions, got %d", inv.Head.Num(), l)
 		}
-		for _, vnum := range inv.VNums() {
-			vstate := inv.VState(vnum)
+		for i, vnum := range inv.VNums() {
+			ver := inv.Versions[vnum]
 			// created
-			idxCreated := verRes.Versions[vnum.Num()-1].Created.Unix()
-			expCreated := vstate.Created.Unix()
+			idxCreated := verRes.Versions[i].Created.Unix()
+			expCreated := ver.Created.Unix()
 			if idxCreated != expCreated {
 				t.Fatalf("indexed version date doesn't match: %v, not %v", idxCreated, expCreated)
 			}
 			// mesage
 			idxMessage := verRes.Versions[vnum.Num()-1].Message
-			expMessage := vstate.Message
+			expMessage := ver.Message
 			if idxMessage != expMessage {
 				t.Fatalf("indexed version message doesn't match: %v, not %v", idxMessage, expMessage)
+			}
+			verIndex, err := inv.IndexFull(vnum, true, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := verIndex.SetDirDigests(inv.DigestAlgorithm); err != nil {
+				t.Fatal(err)
 			}
 			if _, err := idx.GetContent(ctx, inv.ID, vnum, "."); err != nil {
 				t.Fatal(err)
 			}
-			for lpath, cpaths := range vstate.State {
+			verIndex.Walk(func(lpath string, isdir bool, vals *ocfl.IndexItem) error {
 				entry, err := idx.GetContent(ctx, inv.ID, vnum, lpath)
 				if err != nil {
 					t.Fatal(inv.ID, vnum, lpath, err)
 				}
-				var foundContent bool
-				for _, cpath := range cpaths {
-					if cpath == entry.Content.ContentPath {
-						foundContent = true
-						break
-					}
+				if entry.Content.IsDir != isdir {
+					t.Fatalf("expected sqlIndex value to match ocfl.Index value for %s", lpath)
 				}
-				if !foundContent {
-					t.Fatalf("GetContent didn't return expected content path for %s, %s, %s: %s not in %s",
-						inv.ID, vnum, lpath, entry.Content.ContentPath, strings.Join(cpaths, ", "))
+				if !strings.EqualFold(entry.Content.Sum, vals.Digests[inv.DigestAlgorithm]) {
+					t.Fatalf("%s: %s != %s", lpath, entry.Content.Sum, vals.Digests[inv.DigestAlgorithm])
 				}
-			}
+				if isdir {
+					return nil
+				}
 
+				if !vals.HasSrc(entry.Content.ContentPath) {
+					t.Fatalf("GetContent didn't return expected content path for %s, %s, %s: %s not in %s",
+						inv.ID, vnum, lpath, entry.Content.ContentPath, strings.Join(vals.SrcPaths, ", "))
+				}
+
+				return nil
+			})
 		}
 	}
 

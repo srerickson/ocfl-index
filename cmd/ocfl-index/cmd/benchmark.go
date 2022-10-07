@@ -98,9 +98,8 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 	fmt.Println()
 	i = 0
 	timer = 0
-	for _, vnum := range sampleInv.VNums() {
-		vstate := sampleInv.VState(vnum)
-		for lpath := range vstate.State {
+	for vnum, ver := range sampleInv.Versions {
+		for lpath := range ver.State.AllPaths() {
 			contentStart := time.Now()
 			_, err := idx.GetContent(ctx, sampleInv.ID, vnum, lpath)
 			if err != nil {

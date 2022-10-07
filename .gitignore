@@ -2,5 +2,5 @@ dist/
 testdata/minio/**
 !testdata/minio/simple-root
 !testdata/minio/simple-root/.gitkeep
-
+.tool-versions
 **/*.sqlite

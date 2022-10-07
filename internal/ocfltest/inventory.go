@@ -34,7 +34,7 @@ func GenInv(conf *GenInvConf) *ocflv1.Inventory {
 		Versions:        map[ocfl.VNum]*ocflv1.Version{},
 	}
 	state := randomState(conf.Numfiles)
-	vnum := ocfl.V0
+	vnum := ocfl.Head
 	for vnum.Num() < conf.Head.Num() {
 		vnum, _ = vnum.Next()
 		inv.Versions[vnum] = &ocflv1.Version{

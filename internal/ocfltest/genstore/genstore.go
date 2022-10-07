@@ -11,7 +11,6 @@ import (
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
 	"github.com/srerickson/ocfl/backend/cloud"
 	"github.com/srerickson/ocfl/extensions"
-	"github.com/srerickson/ocfl/ocflv1"
 	"gocloud.dev/blob/s3blob"
 )
 
@@ -59,7 +58,6 @@ func doGenStore(c *config) error {
 		InvNumber:    c.numObjects,
 		InvSize:      c.numFiles,
 		VNumMax:      c.numVers,
-		Layout:       ocflv1.NewStoreLayout("this is the store description", extensions.Ext0003),
 		LayoutConfig: extensions.NewLayoutHashIDTuple(),
 	}
 	return ocfltest.GenStore(fsys, c.S3Path, &conf)
