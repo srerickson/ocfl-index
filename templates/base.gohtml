@@ -1,0 +1,24 @@
+{{ define "base" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>ocfl-index</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content="" />
+</head>
+<body>
+    {{- if .ID }}
+    <h1>{{ .ID }}</h1>
+    {{ end -}}
+    {{- if not .VNum.Empty }}
+    <h2>{{ .VNum }}</h2>
+    {{ end -}}
+    {{- if .Path }}
+    <h3>{{ .Path }}</h3>
+    {{ end -}}
+
+    <div class="container">{{ template "content" . }}</div>
+</body>
+</html>
+{{ end }}

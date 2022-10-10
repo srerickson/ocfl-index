@@ -78,7 +78,7 @@ func TestIndexInventory(t *testing.T) {
 	}
 	// check inventory is indexed
 	for _, inv := range invs {
-		verRes, err := idx.GetVersions(ctx, inv.ID)
+		verRes, err := idx.GetObject(ctx, inv.ID)
 		if err != nil {
 			t.Fatal(inv.ID, err)
 		}

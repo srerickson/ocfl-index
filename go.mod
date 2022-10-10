@@ -4,6 +4,8 @@ go 1.18
 
 require (
 	github.com/aws/aws-sdk-go v1.44.66
+	github.com/go-chi/chi v1.5.4
+	github.com/go-chi/chi/v5 v5.0.7
 	github.com/muesli/coral v1.0.0
 	github.com/srerickson/ocfl v0.0.10
 	gocloud.dev v0.26.0

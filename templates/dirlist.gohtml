@@ -1,0 +1,21 @@
+{{ define "content" }}
+<div class="digest">{{.Content.Sum}}</div>
+    {{- if .Content.IsDir }}
+    <ul>
+        {{- if ne $.Path "."}}
+        <li>
+            <span class="path"><a href="/{{ $.ContentPath $.ID $.VNum $.Parent}}">..</a></span>
+        </li>
+        {{- end }}
+        {{- range .Content.Children }}
+        <li>  
+            <span class="path {{- if .IsDir}} dir{{end}}">
+                <a href="/{{ $.ContentPath $.ID $.VNum $.Path .Name}}">
+                    {{- .Name -}}
+                </a>
+            </span>
+        </li>
+        {{- end }}
+    </ul>
+    {{- end}}
+{{- end }}

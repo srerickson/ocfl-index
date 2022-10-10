@@ -9,32 +9,33 @@ import (
 	"github.com/srerickson/ocfl/pathtree"
 )
 
-type Tree struct {
-	*Node
+// IndexingTree is an alias for a pathtree.Node that stores references to
+// IndexingVal. Indexing tree is used to temporarily hold values from
+// the an inventory during the indexing process.
+type IndexingTree = pathtree.Node[*IndexingVal]
+
+type IndexingVal struct {
+	Sum  []byte // digest for an index node (file or dir)
+	Path string // content path from manifest (file only)
 }
 
-type TreeVal struct {
-	Sum  []byte
-	Path string
-}
-
-type Node = pathtree.Node[*TreeVal]
-
-func InventoryTree(inv *ocflv1.Inventory) (*Tree, error) {
+// InventoryTree returns an IndexingTree with all node values from the
+// inventory.
+func InventoryTree(inv *ocflv1.Inventory) (*IndexingTree, error) {
 	fullIndex := ocfl.NewIndex()
 	for vnum := range inv.Versions {
 		verIndex, err := inv.IndexFull(vnum, true, false)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("indexing %s: %w", vnum, err)
 		}
 		if err := fullIndex.SetDir(vnum.String(), verIndex, false); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("indexing %s: %w", vnum, err)
 		}
 	}
 	if err := fullIndex.SetDirDigests(inv.DigestAlgorithm); err != nil {
 		return nil, err
 	}
-	mapFn := func(inf *ocfl.IndexItem) (*TreeVal, error) {
+	mapFn := func(inf *ocfl.IndexItem) (*IndexingVal, error) {
 		alg := inv.DigestAlgorithm
 		sumstr, exists := inf.Digests[alg]
 		if !exists {
@@ -51,15 +52,11 @@ func InventoryTree(inv *ocflv1.Inventory) (*Tree, error) {
 		if len(inf.SrcPaths) > 0 {
 			srcPath = inf.SrcPaths[0]
 		}
-		return &TreeVal{
+		return &IndexingVal{
 			Sum:  sumbyt,
 			Path: srcPath,
 		}, nil
 
 	}
-	newRoot, err := ocfl.MapIndex(fullIndex, mapFn)
-	if err != nil {
-		return nil, err
-	}
-	return &Tree{Node: newRoot}, nil
+	return ocfl.MapIndex(fullIndex, mapFn)
 }

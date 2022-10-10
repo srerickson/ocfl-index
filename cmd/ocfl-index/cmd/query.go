@@ -1,6 +1,5 @@
 /*
 Copyright © 2022
-
 */
 package cmd
 
@@ -92,7 +91,7 @@ func DoQuery(ctx context.Context, dbName string, c *queryConfig) error {
 		}
 		return nil
 	}
-	verRes, err := idx.GetVersions(ctx, c.objectID)
+	verRes, err := idx.GetObject(ctx, c.objectID)
 	if err != nil {
 		return err
 	}

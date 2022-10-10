@@ -47,6 +47,51 @@ func (q *Queries) GetContentPath(ctx context.Context, arg GetContentPathParams) 
 	return file_path, err
 }
 
+const getContentPathSum = `-- name: GetContentPathSum :many
+SELECT object_id, node_id, file_path, id, dir, sum from ocfl_index_content_paths paths
+INNER JOIN ocfl_index_nodes nodes on nodes.id = paths.node_id AND nodes.dir IS FALSE
+WHERE nodes.sum = ?
+`
+
+type GetContentPathSumRow struct {
+	ObjectID int64
+	NodeID   int64
+	FilePath string
+	ID       int64
+	Dir      bool
+	Sum      []byte
+}
+
+func (q *Queries) GetContentPathSum(ctx context.Context, sum []byte) ([]GetContentPathSumRow, error) {
+	rows, err := q.db.QueryContext(ctx, getContentPathSum, sum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetContentPathSumRow
+	for rows.Next() {
+		var i GetContentPathSumRow
+		if err := rows.Scan(
+			&i.ObjectID,
+			&i.NodeID,
+			&i.FilePath,
+			&i.ID,
+			&i.Dir,
+			&i.Sum,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNodeSum = `-- name: GetNodeSum :one
 SELECT id from ocfl_index_nodes WHERE sum = ? AND dir = ?
 `
@@ -342,6 +387,48 @@ func (q *Queries) NodeChildren(ctx context.Context, parentID int64) ([]NodeChild
 			&i.Name,
 			&i.Dir,
 			&i.Sum,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nodeDirChildrenSum = `-- name: NodeDirChildrenSum :many
+SELECT child.id, names.name, child.dir, hex(child.sum) sum FROM ocfl_index_nodes child
+INNER JOIN ocfl_index_names names ON child.id = names.node_id
+INNER JOIN ocfl_index_nodes parent ON names.parent_id = parent.id
+WHERE parent.sum = ? AND parent.dir is TRUE
+`
+
+type NodeDirChildrenSumRow struct {
+	ID   int64
+	Name string
+	Dir  bool
+	Hex  string
+}
+
+func (q *Queries) NodeDirChildrenSum(ctx context.Context, sum []byte) ([]NodeDirChildrenSumRow, error) {
+	rows, err := q.db.QueryContext(ctx, nodeDirChildrenSum, sum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NodeDirChildrenSumRow
+	for rows.Next() {
+		var i NodeDirChildrenSumRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Dir,
+			&i.Hex,
 		); err != nil {
 			return nil, err
 		}

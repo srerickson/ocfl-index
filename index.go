@@ -20,9 +20,13 @@ type Interface interface {
 	Close() error
 	GetSchemaVersion(ctx context.Context) (int, int, error)
 	MigrateSchema(ctx context.Context, erase bool) (bool, error)
+
+	// IndexInventory scans inv and adds entries to the index
 	IndexInventory(ctx context.Context, inv *ocflv1.Inventory) error
+
+	// object/version/path API
 	AllObjects(ctx context.Context) (*ObjectsResult, error)
-	GetVersions(ctx context.Context, objectID string) (*VersionsResult, error)
+	GetObject(ctx context.Context, objectID string) (*ObjectResult, error)
 	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
 
 	// TODO
@@ -36,8 +40,8 @@ type ObjectsResult struct {
 	Objects []*ObjectMeta `json:"objects"`
 }
 
-// VersionsResult is an index response, suitable for json marshaling
-type VersionsResult struct {
+// ObjectResult is an index response, suitable for json marshaling
+type ObjectResult struct {
 	// OCFL Object ID
 	ID       string         `json:"id"`
 	Versions []*VersionMeta `json:"versions"`
@@ -63,7 +67,8 @@ type ObjectMeta struct {
 
 // VersionMeta represents indexed OCFL object version metadata
 type VersionMeta struct {
-	Num     ocfl.VNum    `json:"id"`             // Version number
+	ID      string       `json:"id"`             // Object ID
+	Num     ocfl.VNum    `json:"num"`            // Version number
 	Message string       `json:"message"`        // Version message
 	Created time.Time    `json:"created"`        // Version create datetime
 	User    *ocflv1.User `json:"user,omitempty"` // Version user information
@@ -79,6 +84,7 @@ type ContentMeta struct {
 
 // DirEntry represents an entry in a list of directory contents
 type DirEntry struct {
-	Name  string `json:"name"` // file or directory name
-	IsDir bool   `json:"dir"`  // entry is a directory
+	Name  string `json:"name"`
+	IsDir bool   `json:"dir"`
+	Sum   string `json:"digest"`
 }

@@ -70,6 +70,11 @@ SELECT child.id, names.name, child.dir, child.sum FROM ocfl_index_nodes child
 INNER JOIN ocfl_index_names names ON child.id = names.node_id
 WHERE names.parent_id = ?;
 
+-- name: NodeDirChildrenSum :many
+SELECT child.id, names.name, child.dir, child.sum FROM ocfl_index_nodes child
+INNER JOIN ocfl_index_names names ON child.id = names.node_id
+INNER JOIN ocfl_index_nodes parent ON names.parent_id = parent.id
+WHERE parent.sum = ? AND parent.dir is TRUE;
 
 --
 -- Names
@@ -92,3 +97,8 @@ SELECT file_path from ocfl_index_content_paths paths
 INNER JOIN ocfl_index_objects objects on paths.object_id = objects.id
 INNER JOIN ocfl_index_nodes nodes on nodes.id = paths.node_id
 WHERE objects.uri = ? AND nodes.sum = ?; 
+
+-- name: GetContentPathSum :many
+SELECT * from ocfl_index_content_paths paths
+INNER JOIN ocfl_index_nodes nodes on nodes.id = paths.node_id AND nodes.dir IS FALSE
+WHERE nodes.sum = ?; 
