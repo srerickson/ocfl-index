@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,9 +12,9 @@ import (
 
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl-index/internal/digest"
 	"github.com/srerickson/ocfl-index/sqlite/sqlc"
 	"github.com/srerickson/ocfl/ocflv1"
+	"github.com/srerickson/ocfl/pathtree"
 )
 
 const (
@@ -50,7 +49,7 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	errFn := func(err error) error {
 		return fmt.Errorf("indexing inventory for %s: %w", inv.ID, err)
 	}
-	root, err := digest.InventoryTree(inv)
+	tree, err := index.InventoryTree(inv)
 	if err != nil {
 		return errFn(err)
 	}
@@ -60,12 +59,15 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	}
 	defer tx.Rollback()
 	queries := sqlc.New(&db.DB).WithTx(tx)
-	nodeID, err := addIndexNodes(ctx, queries, root, 0, "")
+	rootNodeID, err := addIndexNodes(ctx, queries, tree.Node, 0, "")
 	if err != nil {
 		return errFn(err)
 	}
-	objID, _, err := upsertObjectNode(ctx, queries, inv.ID, nodeID, inv.Head)
+	objID, _, err := upsertObjectNode(ctx, queries, inv.ID, rootNodeID, inv.Head)
 	if err != nil {
+		return errFn(err)
+	}
+	if err := insertContent(ctx, queries, tree.Node, objID); err != nil {
 		return errFn(err)
 	}
 	// replace existing version entries
@@ -86,23 +88,6 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 			params.UserName = version.User.Name
 		}
 		_, err := queries.InsertObjectVersion(ctx, params)
-		if err != nil {
-			return err
-		}
-	}
-	// add all content paths
-	for sum := range inv.Manifest.AllDigests() {
-		byts, err := hex.DecodeString(sum)
-		if err != nil {
-			return err
-		}
-		paths := inv.Manifest.DigestPaths(sum)
-		params := sqlc.InsertContentPathIgnoreParams{
-			Sum:      byts,
-			FilePath: paths[0],
-			ObjectID: objID,
-		}
-		err = queries.InsertContentPathIgnore(ctx, params)
 		if err != nil {
 			return err
 		}
@@ -279,12 +264,17 @@ func (idx *Index) existingTables(ctx context.Context) ([]string, error) {
 
 // addIndexNodes adds the node and all its descendants to the index. Unless parentID is 0, a name entry
 // is also created linking the top-level node to the parent.
-func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *digest.Tree, parentID int64, name string) (int64, error) {
-	nodeID, isNew, err := getInsertNode(ctx, tx, node.Val(), node.IsDir())
+func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *index.Node, parentID int64, name string) (int64, error) {
+	if node.Val == nil {
+		return 0, fmt.Errorf("missing node value, name: %s", name)
+	}
+	nodeID, isNew, err := getInsertNode(ctx, tx, node.Val.Sum, node.IsDir())
 	if err != nil {
 		return 0, err
 	}
 	if parentID != 0 {
+		// even if getInserNode didn't create a new node, we still need toe add
+		// a new named 'edge' connecting parentID and nodeID.
 		err = tx.InsertNameIgnore(ctx, sqlc.InsertNameIgnoreParams{
 			NodeID:   nodeID,
 			ParentID: parentID,
@@ -295,9 +285,11 @@ func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *digest.Tree, par
 		}
 	}
 	if !isNew {
+		// if getInserNode didn't create a new node, the children have already
+		// been created.
 		return nodeID, nil
 	}
-	for _, n := range node.Children() {
+	for n := range node.Children {
 		child, err := node.Get(n)
 		if err != nil {
 			panic(err)
@@ -360,6 +352,23 @@ func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, uri string, nodeID
 		}
 	}
 	return obj.ID, false, nil
+}
+
+func insertContent(ctx context.Context, tx *sqlc.Queries, node *index.Node, objID int64) error {
+	return pathtree.Walk(node, func(name string, isdir bool, val *index.TreeVal) error {
+		if val == nil {
+			return fmt.Errorf("missing node values for %s", name)
+		}
+		params := sqlc.InsertContentPathIgnoreParams{
+			Sum:      val.Sum,
+			FilePath: val.Path,
+			ObjectID: objID,
+		}
+		if err := tx.InsertContentPathIgnore(ctx, params); err != nil {
+			return fmt.Errorf("adding content path: '%s'", val.Path)
+		}
+		return nil
+	})
 }
 
 var _ index.Interface = (*Index)(nil)
