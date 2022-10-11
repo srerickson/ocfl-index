@@ -82,7 +82,7 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 			Name:     vnum.String(),
 			Num:      int64(vnum.Num()),
 			Message:  version.Message,
-			Created:  version.Created,
+			Created:  version.Created.UTC(), // location prevents errors reading from db
 		}
 		if version.User != nil {
 			params.UserAddress = version.User.Address

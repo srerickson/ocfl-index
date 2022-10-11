@@ -37,7 +37,9 @@ type Interface interface {
 
 // ObjectsResult is an index response, suitable for json marshaling
 type ObjectsResult struct {
-	Objects []*ObjectMeta `json:"objects"`
+	Description string
+	Layout      string
+	Objects     []*ObjectMeta `json:"objects"`
 }
 
 // ObjectResult is an index response, suitable for json marshaling

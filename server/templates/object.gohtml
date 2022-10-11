@@ -1,0 +1,11 @@
+{{ define "content" -}}
+<div class="object">
+    <ul class="versions">
+    {{ range .Versions -}}
+        <li>
+            <span class="vnum"><a href="{{ $.VersionPath $.ID .Num}}">{{ .Num }}</a></span>
+        </li>
+    {{- end }}
+    </ul>
+</div>
+{{- end }}
