@@ -37,10 +37,7 @@ func InventoryTree(inv *ocflv1.Inventory) (*IndexingTree, error) {
 	}
 	mapFn := func(inf *ocfl.IndexItem) (*IndexingVal, error) {
 		alg := inv.DigestAlgorithm
-		sumstr, exists := inf.Digests[alg]
-		if !exists {
-			return nil, fmt.Errorf("missing %s digest", alg)
-		}
+		sumstr := inf.Digests[alg]
 		if sumstr == "" {
 			return nil, fmt.Errorf("missing %s digest", alg)
 		}

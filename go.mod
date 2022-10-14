@@ -5,6 +5,8 @@ go 1.18
 require (
 	github.com/aws/aws-sdk-go v1.44.66
 	github.com/go-chi/chi v1.5.4
+	github.com/go-logr/logr v1.2.3
+	github.com/go-logr/stdr v1.2.2
 	github.com/muesli/coral v1.0.0
 	github.com/srerickson/ocfl v0.0.10
 	gocloud.dev v0.26.0
@@ -38,7 +40,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.11.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.16.3 // indirect
 	github.com/aws/smithy-go v1.11.2 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect

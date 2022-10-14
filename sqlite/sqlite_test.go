@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -71,7 +72,7 @@ func TestIndexInventory(t *testing.T) {
 			Add:      .05, // modify .05 of files remaining
 			Mod:      .05, // add .05 new random file
 		})
-		err := idx.IndexInventory(ctx, invs[i])
+		err := idx.IndexObject(ctx, url.PathEscape(invs[i].ID), invs[i])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +85,7 @@ func TestIndexInventory(t *testing.T) {
 		}
 		if l := len(verRes.Versions); l != inv.Head.Num() {
 			for i := range verRes.Versions {
-				t.Log(verRes.Versions[i].Num)
+				t.Log(verRes.Versions[i].Version)
 			}
 			t.Fatalf("expected %d versions, got %d", inv.Head.Num(), l)
 		}
@@ -117,21 +118,15 @@ func TestIndexInventory(t *testing.T) {
 				if err != nil {
 					t.Fatal(inv.ID, vnum, lpath, err)
 				}
-				if entry.Content.IsDir != isdir {
+				if entry.IsDir != isdir {
 					t.Fatalf("expected sqlIndex value to match ocfl.Index value for %s", lpath)
 				}
-				if !strings.EqualFold(entry.Content.Sum, vals.Digests[inv.DigestAlgorithm]) {
-					t.Fatalf("%s: %s != %s", lpath, entry.Content.Sum, vals.Digests[inv.DigestAlgorithm])
+				if !strings.EqualFold(entry.Sum, vals.Digests[inv.DigestAlgorithm]) {
+					t.Fatalf("%s: %s != %s", lpath, entry.Sum, vals.Digests[inv.DigestAlgorithm])
 				}
 				if isdir {
 					return nil
 				}
-
-				if !vals.HasSrc(entry.Content.ContentPath) {
-					t.Fatalf("GetContent didn't return expected content path for %s, %s, %s: %s not in %s",
-						inv.ID, vnum, lpath, entry.Content.ContentPath, strings.Join(vals.SrcPaths, ", "))
-				}
-
 				return nil
 			})
 		}

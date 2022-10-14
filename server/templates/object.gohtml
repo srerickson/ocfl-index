@@ -3,7 +3,7 @@
     <ul class="versions">
     {{ range .Versions -}}
         <li>
-            <span class="vnum"><a href="{{ $.VersionPath $.ID .Num}}">{{ .Num }}</a></span>
+            <span class="vnum"><a href="{{ version_path $.ID .Version}}">{{ .Version }}</a></span>
         </li>
     {{- end }}
     </ul>

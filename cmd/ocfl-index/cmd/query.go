@@ -52,7 +52,7 @@ returned; for directories, the directing listing is returned.`,
 				log.Fatal(err)
 			}
 		}
-		err := DoQuery(cmd.Context(), dbName, &queryFlags)
+		err := DoQuery(cmd.Context(), dbFlag, &queryFlags)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -106,13 +106,13 @@ func DoQuery(ctx context.Context, dbName string, c *queryConfig) error {
 			return enc.Encode(verRes)
 		}
 		for _, v := range verRes.Versions {
-			fmt.Println(v.Num, v.Created)
+			fmt.Println(v.Version, v.Created)
 		}
 		return nil
 	}
 	// list contents of vnum/path
 	if c.vnum.Empty() {
-		c.vnum = verRes.Versions[len(verRes.Versions)-1].Num
+		c.vnum = verRes.Versions[len(verRes.Versions)-1].Version
 	}
 	contRes, err := idx.GetContent(ctx, c.objectID, c.vnum, c.path)
 	if err != nil {
@@ -123,11 +123,7 @@ func DoQuery(ctx context.Context, dbName string, c *queryConfig) error {
 		enc.SetIndent(``, ` `)
 		return enc.Encode(contRes)
 	}
-	if !contRes.Content.IsDir {
-		fmt.Println(contRes.Content.ContentPath)
-		return nil
-	}
-	for _, c := range contRes.Content.Children {
+	for _, c := range contRes.Children {
 		if c.IsDir {
 			fmt.Println(c.Name + "/")
 			continue

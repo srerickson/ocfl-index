@@ -24,7 +24,7 @@ const (
 
 var (
 	// expected schema for index file
-	schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 1}
+	schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 2}
 
 	//go:embed schema.sql
 	querySchema string
@@ -40,10 +40,19 @@ type Index struct {
 }
 
 func New(db *sql.DB) *Index {
+	db.Exec("PRAGMA case_sensitive_like=ON;")
 	return &Index{DB: *db}
 }
 
-func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) error {
+func (db *Index) GetStorageRootDescription(ctx context.Context) (string, error) {
+	return sqlc.New(&db.DB).GetStorageRootDescription(ctx)
+}
+
+func (db *Index) SetStorageRootDescription(ctx context.Context, desc string) error {
+	return sqlc.New(&db.DB).SetStorageRootDescription(ctx, desc)
+}
+
+func (db *Index) IndexObject(ctx context.Context, root string, inv *ocflv1.Inventory) error {
 	if err := inv.Validate().Err(); err != nil {
 		return fmt.Errorf("inventory is invalid and cannot be indexed: %w", err)
 	}
@@ -64,7 +73,7 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	if err != nil {
 		return errFn(err)
 	}
-	objID, _, err := upsertObjectNode(ctx, queries, inv.ID, rootNodeID, inv.Head)
+	objID, _, err := upsertObjectNode(ctx, queries, inv.ID, root, rootNodeID, inv.Head)
 	if err != nil {
 		return errFn(err)
 	}
@@ -96,7 +105,7 @@ func (db *Index) IndexInventory(ctx context.Context, inv *ocflv1.Inventory) erro
 	return tx.Commit()
 }
 
-func (idx *Index) AllObjects(ctx context.Context) (*index.ObjectsResult, error) {
+func (idx *Index) AllObjects(ctx context.Context) (*index.ListObjectsResult, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx)
 	if err != nil {
@@ -110,10 +119,10 @@ func (idx *Index) AllObjects(ctx context.Context) (*index.ObjectsResult, error) 
 		if err != nil {
 			return nil, err // head info in index is invalid
 		}
-		obj.ID = rows[i].Uri
+		obj.ID = rows[i].OcflID
 		objects[i] = obj
 	}
-	result := &index.ObjectsResult{
+	result := &index.ListObjectsResult{
 		Objects: objects,
 	}
 	return result, nil
@@ -121,6 +130,10 @@ func (idx *Index) AllObjects(ctx context.Context) (*index.ObjectsResult, error) 
 
 func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectResult, error) {
 	qry := sqlc.New(idx)
+	obj, err := qry.GetObjectID(ctx, objID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := qry.ListObjectVersions(ctx, objID)
 	if err != nil {
 		return nil, err
@@ -132,7 +145,7 @@ func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectRes
 			Message: rows[i].Message,
 			Created: rows[i].Created,
 		}
-		err := ocfl.ParseVNum(rows[i].Name, &ver.Num)
+		err := ocfl.ParseVNum(rows[i].Name, &ver.Version)
 		if err != nil {
 			return nil, err
 		}
@@ -146,19 +159,24 @@ func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectRes
 	}
 	result := &index.ObjectResult{
 		ID:       objID,
+		Head:     obj.Head,
+		RootPath: obj.RootPath,
 		Versions: vers,
 	}
 	return result, nil
 }
 
-func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.ContentResult, error) {
+func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.PathResult, error) {
 	p = path.Clean(p)
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
 	}
-	var intID int64       // internal sql id
-	var cp sql.NullString // content path may be nil
 	fullP := path.Join(vnum.String(), p)
+	var node = struct {
+		id     int64
+		sumbyt []byte
+		isdir  bool
+	}{}
 	qry := sqlc.New(&db.DB)
 	errFn := func(err error) error {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -166,26 +184,28 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p
 		}
 		return fmt.Errorf("%s: %s: %w", objID, fullP, err)
 	}
-	result := index.ContentResult{
-		ID:      objID,
-		Path:    p,
-		Version: vnum,
-		Content: &index.ContentMeta{},
-	}
+
 	row := db.QueryRowContext(ctx, queryGetPathObject, objID, fullP)
-	err := row.Scan(&intID, &result.Content.Sum, &result.Content.IsDir, &cp)
+	err := row.Scan(&node.id, &node.sumbyt, &node.isdir)
 	if err != nil {
 		return nil, errFn(err)
 	}
-	if result.Content.IsDir {
-		rows, err := qry.NodeChildren(ctx, intID)
+	result := index.PathResult{
+		ID:      objID,
+		Version: vnum,
+		Path:    p,
+		Sum:     hex.EncodeToString(node.sumbyt),
+		IsDir:   node.isdir,
+	}
+	if result.IsDir {
+		rows, err := qry.NodeDirChildren(ctx, node.id)
 		if err != nil {
 			// require directory node to have children?
 			return nil, errFn(err)
 		}
-		result.Content.Children = make([]index.DirEntry, len(rows))
+		result.Children = make([]index.DirEntry, len(rows))
 		for i, r := range rows {
-			result.Content.Children[i] = index.DirEntry{
+			result.Children[i] = index.DirEntry{
 				IsDir: r.Dir,
 				Name:  r.Name,
 				Sum:   hex.EncodeToString(r.Sum),
@@ -193,11 +213,20 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p
 		}
 		return &result, nil
 	}
-	if !cp.Valid {
-		return nil, fmt.Errorf("missing content path %s: %s: %w", objID, fullP, index.ErrMissingValue)
-	}
-	result.Content.ContentPath = cp.String
 	return &result, nil
+}
+
+func (db *Index) GetContentPath(ctx context.Context, sum string) (string, error) {
+	qry := sqlc.New(&db.DB)
+	bytes, err := hex.DecodeString(sum)
+	if err != nil {
+		return "", err
+	}
+	result, err := qry.GetContentPath(ctx, bytes)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(result.RootPath, result.FilePath), nil
 }
 
 func (db *Index) GetSchemaVersion(ctx context.Context) (int, int, error) {
@@ -328,16 +357,17 @@ func getInsertNode(ctx context.Context, qry *sqlc.Queries, sum []byte, dir bool)
 	return id, false, nil
 }
 
-func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, uri string, nodeID int64, head ocfl.VNum) (int64, bool, error) {
-	obj, err := qry.GetObjectURI(ctx, uri)
+func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, objID string, objRoot string, nodeID int64, head ocfl.VNum) (int64, bool, error) {
+	obj, err := qry.GetObjectID(ctx, objID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return 0, false, err
 		}
 		id, err := qry.InsertObject(ctx, sqlc.InsertObjectParams{
-			Uri:    uri,
-			NodeID: nodeID,
-			Head:   head.String(),
+			OcflID:   objID,
+			RootPath: objRoot,
+			NodeID:   nodeID,
+			Head:     head.String(),
 		})
 		if err != nil {
 			return 0, false, err

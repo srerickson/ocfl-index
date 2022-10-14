@@ -1,6 +1,5 @@
 /*
 Copyright © 2022
-
 */
 package cmd
 
@@ -10,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/url"
 	"strings"
 	"time"
 
@@ -84,8 +84,9 @@ func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error
 		if i == sampleInvN {
 			sampleInv = inv
 		}
+
 		indexStart := time.Now()
-		if err := idx.IndexInventory(ctx, inv); err != nil {
+		if err := idx.IndexObject(ctx, url.PathEscape(inv.ID), inv); err != nil {
 			return err
 		}
 		timer += time.Since(indexStart).Seconds()

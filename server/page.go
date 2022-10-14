@@ -3,35 +3,45 @@ package server
 import (
 	"net/url"
 	"path"
+	"text/template"
 
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
 )
 
-type page struct {
-	Title  string
-	ID     string    // object ID for the page
-	VNum   ocfl.VNum // version number (if any)
-	Path   string    // logical path (if any)
-	Parent string    // parent directory
-
-	Objects  []*index.ObjectMeta
-	Versions []*index.VersionMeta
-	Content  *index.ContentMeta
+type Page struct {
+	Title string
 }
 
-func (p page) ObjectPath(id string) string {
-	return "/" + url.QueryEscape(id)
+type RootPage struct {
+	Page
+	Content *index.ListObjectsResult
 }
 
-func (p page) VersionPath(id string, vnum ocfl.VNum) string {
-	v := "HEAD"
-	if vnum != ocfl.Head {
-		v = vnum.String()
-	}
-	return path.Join(p.ObjectPath(id), v, ".")
+type objectPage struct {
+	Page
+	Content *index.ObjectResult
 }
 
-func (p page) ContentPath(id string, vnum ocfl.VNum, names ...string) string {
-	return path.Join(p.VersionPath(id, vnum), path.Join(names...))
+type ContentPage struct {
+	Page
+	Content *index.PathResult
+}
+
+var pageFuncs template.FuncMap = map[string]any{
+	"object_path":  objectPath,
+	"version_path": versionPath,
+	"content_path": contentPath,
+}
+
+func objectPath(id string) string {
+	return browsePrefix + "/" + url.QueryEscape(id)
+}
+
+func versionPath(id string, vnum ocfl.VNum) string {
+	return path.Join(objectPath(id), vnum.String(), ".")
+}
+
+func contentPath(id string, vnum ocfl.VNum, names ...string) string {
+	return path.Join(versionPath(id, vnum), path.Join(names...))
 }

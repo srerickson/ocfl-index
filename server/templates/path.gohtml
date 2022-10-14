@@ -1,0 +1,15 @@
+{{ define "content" -}}
+{{ if .IsDir -}}
+<ul>
+    {{- range .Children }}
+    <li>  
+        <span class="path {{- if .IsDir}} dir{{end}}">
+            <a href="{{ content_path $.ID $.Version $.Path .Name}}">
+                {{- .Name -}}
+            </a>
+        </span>
+    </li>
+    {{- end }}
+</ul>
+{{- end}}
+{{- end }}

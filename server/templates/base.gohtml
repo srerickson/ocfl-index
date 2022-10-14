@@ -8,36 +8,9 @@
     <meta name="description" content="" />
     <link href="/assets/style.css" rel="stylesheet">
 </head>
-<body>
-    {{- if .Title }}
-        <h1>{{ .Title }}</h1>
-    {{- end }}
-    <div class="nav">    
-     
-
-        {{- if .ID }}    
-        <span class="root"><a href ="/"> > </a></span>
-        <span class="id">
-            <a href="{{ .ObjectPath .ID }}">{{ .ID }}</a>
-        </span>
-        {{ end }}
-
-        {{- if not .VNum.Empty }}
-        <span class="vnum">
-            : <a href ="{{ .VersionPath .ID .VNum }}"> {{ .VNum }}</a>
-        </span>
-        {{- end }}
-        
-        
-        {{- if .Path }}
-        <span class="path">
-            : {{ .Path }}
-        </span>
-        {{ end }}
-    </div>
-
+<body>   
     <div class="container">
-        {{ template "content" . }}
+        {{ template "content" .Content }}
     </div>
 </body>
 </html>
