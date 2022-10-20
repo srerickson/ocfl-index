@@ -153,7 +153,7 @@ func randomPath(depth, nameLen int) string {
 }
 
 func randomName(l int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyz0123456789_")
+	var letters = []rune("abcdefghijklmnopqrstuvwxyz0123456789_ {}()^.")
 	size := rand.Intn(l) + 1
 	part := make([]rune, size)
 	for j := range part {

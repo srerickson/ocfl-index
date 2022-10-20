@@ -34,8 +34,11 @@ type Interface interface {
 	// object/version/path API
 	AllObjects(ctx context.Context) (*ListObjectsResult, error)
 	GetObject(ctx context.Context, objectID string) (*ObjectResult, error)
-	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*PathResult, error)
+	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
+
+	// sum-based getters
 	GetContentPath(ctx context.Context, sum string) (string, error)
+	GetDirChildren(ctx context.Context, sum string) ([]DirEntry, error)
 
 	// TODO
 	//DeleteObject(ctx context.Context, objectID string) error
@@ -74,11 +77,8 @@ type VersionMeta struct {
 	User    *ocflv1.User `json:"user,omitempty"` // Version user information
 }
 
-// PathResult represent content at a logical path in the object
-type PathResult struct {
-	ID       string     `json:"object_id"`
-	Version  ocfl.VNum  `json:"version"`            // 'v2'
-	Path     string     `json:"path"`               // logical path
+// ContentResult represent content at a logical path in the object
+type ContentResult struct {
 	Sum      string     `json:"digest"`             // Hex encoded checksum
 	IsDir    bool       `json:"dir"`                // Content is a directory
 	Children []DirEntry `json:"children,omitempty"` // Content of a directory

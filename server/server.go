@@ -22,18 +22,19 @@ const (
 	jsonResp       = "application/json; charset=UTF-8"
 	htmlResp       = "text/html; charset=UTF-8"
 	apiPrefix      = "/api"
-	browsePrefix   = "/objects"
+	objectsPrefix  = "/objects"
 	downloadPrefix = "/download"
 	assetPrefix    = "/assets"
+	dirtreePrefix  = "/component/dirtree"
 )
 
 type server struct {
-	fsys     ocfl.FS
-	root     string
-	idx      index.Interface
-	tmplRoot *template.Template
-	tmplObj  *template.Template
-	tmplPath *template.Template
+	fsys         ocfl.FS
+	root         string
+	idx          index.Interface
+	tmplRoot     *template.Template
+	tmplObj      *template.Template
+	tmpStatePath *template.Template
 	// mux      *chi.Mux
 }
 
@@ -43,50 +44,69 @@ func New(fsys ocfl.FS, root string, idx index.Interface) (http.Handler, error) {
 		root: root,
 		idx:  idx,
 	}
+	// template functions
+	pageFuncs := map[string]any{
+		"objects_path":  objectsPath,
+		"object_path":   objectPath,   // server route
+		"version_path":  versionPath,  // server route
+		"state_path":    statePath,    // server route
+		"dirtree_path":  dirtreePath,  // server route
+		"download_path": downloadPath, // server route
+		"short_sum":     short_sum,
+		"format_date":   formatDate,
+	}
+
 	serv.tmplRoot = template.Must(template.New("").Funcs(pageFuncs).ParseFS(templates.FS,
 		"base.gohtml",
 		"root.gohtml"))
-	serv.tmplPath = template.Must(template.New("").Funcs(pageFuncs).ParseFS(templates.FS,
-		"base.gohtml",
-		"path.gohtml"))
 	serv.tmplObj = template.Must(template.New("").Funcs(pageFuncs).ParseFS(templates.FS,
 		"base.gohtml",
 		"object.gohtml"))
+	serv.tmpStatePath = template.Must(template.New("").Funcs(pageFuncs).ParseFS(templates.FS,
+		"base.gohtml",
+		"statepath.gohtml"))
 
 	// routes
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
 
 	// HTML
-	mux.With(setContentType(htmlResp)).Get("/", serv.rootList())
-	mux.Route(browsePrefix+"/{objectID}", func(r chi.Router) {
+	mux.Route(objectsPrefix, func(r chi.Router) {
 		r.Use(setContentType(htmlResp))
-		r.Get("/", serv.getObjectHandler())
-		r.Get("/{ver}", serv.showPathHandler())
-		r.Get("/{ver}/*", serv.showPathHandler())
+		r.Get("/", serv.rootList())
+		r.Route("/{objectID}", func(r chi.Router) {
+			r.Use(setCtxObjectID("objectID"))
+			r.Get("/", serv.getObjectHandler())
+			r.Route("/{ver}", func(r chi.Router) {
+				r.Use(setCtxVersion("ver"))
+				r.With(setCtxStatePath("*")).
+					Get("/*", serv.showContentHandler())
+			})
+		})
 	})
 
 	// API
-	mux.With(setContentType(jsonResp)).Get("/api", serv.rootList())
-	mux.Route(apiPrefix+"/{objectID}", func(r chi.Router) {
+	mux.Route(apiPrefix, func(r chi.Router) {
 		r.Use(setContentType(jsonResp))
-		r.Get("/", serv.getObjectHandler())
-		r.Get("/{ver}", serv.showPathHandler())
-		r.Get("/{ver}/*", serv.showPathHandler())
+		r.Get("/", serv.rootList())
+		r.Route("/{objectID}", func(r chi.Router) {
+			r.Use(setCtxObjectID("objectID"))
+			r.Get("/", serv.getObjectHandler())
+			r.Route("/{ver}", func(r chi.Router) {
+				r.Use(setCtxVersion("ver"))
+				r.With(setCtxStatePath("*")).
+					Get("/*", serv.showContentHandler())
+			})
+		})
 	})
 	mux.Get(downloadPrefix+"/{sum}/{name}", serv.downloadHandler())
+	mux.With(
+		setCtxObjectID("objectID"),
+		setCtxVersion("ver"),
+		setCtxStatePath("*"),
+	).Get(dirtreePrefix+"/{sum}/{objectID}/{ver}/*", serv.partialDir())
 	mux.Get(assetPrefix+"/*", http.StripPrefix("/assets/", http.FileServer(http.FS(assets.FS))).ServeHTTP)
 	return mux, nil
-}
-
-func setContentType(t string) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		f := func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", t)
-			next.ServeHTTP(w, r)
-		}
-		return http.HandlerFunc(f)
-	}
 }
 
 func (srv *server) downloadHandler() func(http.ResponseWriter, *http.Request) {
@@ -119,25 +139,15 @@ func (srv *server) downloadHandler() func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func (srv *server) showPathHandler() func(http.ResponseWriter, *http.Request) {
+func (srv *server) showContentHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := url.QueryUnescape(chi.URLParam(r, "objectID"))
+		st, ok := r.Context().Value(statePathKey).(StatePath)
+		if !ok {
+			panic("state path missing") // FIXME
+		}
+		result, err := srv.idx.GetContent(r.Context(), st.ObjectID, st.Version, st.Path)
 		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		ver := chi.URLParam(r, "ver")
-		var vnum ocfl.VNum
-		if err := ocfl.ParseVNum(ver, &vnum); err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		pth := chi.URLParam(r, "*")
-		if pth == "" {
-			pth = "."
-		}
-		result, err := srv.idx.GetContent(r.Context(), id, vnum, pth)
-		if err != nil {
+			log.Println(err)
 			http.NotFound(w, r)
 			return
 		}
@@ -149,20 +159,31 @@ func (srv *server) showPathHandler() func(http.ResponseWriter, *http.Request) {
 				panic(err) // FIXME
 			}
 		default:
-			p := ContentPage{
-				Content: result,
+			p := Page{
+				Title: path.Base(st.Path),
+				Nav:   st,
 			}
-			if err := srv.tmplPath.ExecuteTemplate(w, "base", p); err != nil {
+			body := StatePathBody{
+				Path:  st,
+				Sum:   result.Sum,
+				IsDir: result.IsDir,
+			}
+			if result.IsDir {
+				body.DirTree = &DirTree{
+					Parent:   &body.Path,
+					Children: result.Children,
+				}
+			}
+			p.Body = body
+			if err := srv.tmpStatePath.ExecuteTemplate(w, "base", p); err != nil {
 				panic(err) // FIXME
 			}
 		}
-
 	}
 }
 
 func (srv *server) getObjectHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Println("here")
 		id, err := url.QueryUnescape(chi.URLParam(r, "objectID"))
 		if err != nil {
 			http.NotFound(w, r)
@@ -185,9 +206,17 @@ func (srv *server) getObjectHandler() func(http.ResponseWriter, *http.Request) {
 				panic(err) // FIXME
 			}
 		default:
-			p := objectPage{
-				Page:    Page{Title: result.ID},
-				Content: result,
+			p := Page{
+				Title: result.ID,
+				Nav: StatePath{
+					ObjectID: id,
+				},
+				Body: ObjectBody{
+					ID:       id,
+					RootPath: result.RootPath,
+					Head:     result.Head,
+					Versions: result.Versions,
+				},
 			}
 			if err := srv.tmplObj.ExecuteTemplate(w, "base", p); err != nil {
 				panic(err) // FIXME
@@ -211,14 +240,38 @@ func (srv *server) rootList() func(http.ResponseWriter, *http.Request) {
 				panic(err) // FIXEM
 			}
 		default:
-			p := RootPage{
-				Page:    Page{Title: "Storage Root Index"},
-				Content: result,
+			p := Page{
+				Title: "Storage Root Index",
+				Body:  RootBody(*result),
 			}
 			err := srv.tmplRoot.ExecuteTemplate(w, "base", &p)
 			if err != nil {
 				panic(err) // FIXME
 			}
+		}
+	}
+}
+
+func (srv *server) partialDir() func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var sum string
+		if sum = chi.URLParam(r, "sum"); sum == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parentPath := r.Context().Value(statePathKey).(StatePath)
+		children, err := srv.idx.GetDirChildren(r.Context(), sum)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		d := DirTree{
+			Parent:   &parentPath,
+			Children: children,
+		}
+		err = srv.tmpStatePath.ExecuteTemplate(w, "dirtree", &d)
+		if err != nil {
+			panic(err) // FIXME
 		}
 	}
 }

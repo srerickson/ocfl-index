@@ -82,6 +82,12 @@ INNER JOIN ocfl_index_names names ON child.id = names.node_id
 WHERE names.parent_id = ? ORDER BY names.name ASC;
 
 
+-- name: NodeDirChildrenSum :many
+SELECT child.id, names.name, child.dir, child.sum FROM ocfl_index_nodes child
+INNER JOIN ocfl_index_names names ON child.id = names.node_id
+INNER JOIN ocfl_index_nodes parent on names.parent_id = parent.id
+WHERE parent.sum = ? AND parent.dir is TRUE ORDER BY names.name ASC;
+
 --
 -- Names
 --

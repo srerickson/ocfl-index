@@ -166,7 +166,7 @@ func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectRes
 	return result, nil
 }
 
-func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.PathResult, error) {
+func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.ContentResult, error) {
 	p = path.Clean(p)
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
@@ -190,12 +190,9 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p
 	if err != nil {
 		return nil, errFn(err)
 	}
-	result := index.PathResult{
-		ID:      objID,
-		Version: vnum,
-		Path:    p,
-		Sum:     hex.EncodeToString(node.sumbyt),
-		IsDir:   node.isdir,
+	result := index.ContentResult{
+		Sum:   hex.EncodeToString(node.sumbyt),
+		IsDir: node.isdir,
 	}
 	if result.IsDir {
 		rows, err := qry.NodeDirChildren(ctx, node.id)
@@ -227,6 +224,27 @@ func (db *Index) GetContentPath(ctx context.Context, sum string) (string, error)
 		return "", err
 	}
 	return path.Join(result.RootPath, result.FilePath), nil
+}
+
+func (db *Index) GetDirChildren(ctx context.Context, sum string) ([]index.DirEntry, error) {
+	qry := sqlc.New(&db.DB)
+	bytes, err := hex.DecodeString(sum)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := qry.NodeDirChildrenSum(ctx, bytes)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]index.DirEntry, len(rows))
+	for i := range rows {
+		results[i] = index.DirEntry{
+			Name:  rows[i].Name,
+			Sum:   hex.EncodeToString(rows[i].Sum),
+			IsDir: rows[i].Dir,
+		}
+	}
+	return results, nil
 }
 
 func (db *Index) GetSchemaVersion(ctx context.Context) (int, int, error) {

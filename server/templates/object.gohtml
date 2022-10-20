@@ -2,8 +2,12 @@
 <div class="object">
     <ul class="versions">
     {{ range .Versions -}}
-        <li>
-            <span class="vnum"><a href="{{ version_path $.ID .Version}}">{{ .Version }}</a></span>
+        <li class="{{ if eq .Version.String $.Head }}head{{ end }}">
+            <a href="{{ version_path $.ID .Version}}">
+                <span class="vnum">{{ .Version }}</span>
+                <span class="created">({{ format_date .Created }}): </span>
+                <span class="message">{{ .Message }}</span>
+            </a>
         </li>
     {{- end }}
     </ul>

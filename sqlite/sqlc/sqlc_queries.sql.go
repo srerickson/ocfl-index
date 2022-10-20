@@ -363,6 +363,48 @@ func (q *Queries) NodeDirChildren(ctx context.Context, parentID int64) ([]NodeDi
 	return items, nil
 }
 
+const nodeDirChildrenSum = `-- name: NodeDirChildrenSum :many
+SELECT child.id, names.name, child.dir, child.sum FROM ocfl_index_nodes child
+INNER JOIN ocfl_index_names names ON child.id = names.node_id
+INNER JOIN ocfl_index_nodes parent on names.parent_id = parent.id
+WHERE parent.sum = ? AND parent.dir is TRUE ORDER BY names.name ASC
+`
+
+type NodeDirChildrenSumRow struct {
+	ID   int64
+	Name string
+	Dir  bool
+	Sum  []byte
+}
+
+func (q *Queries) NodeDirChildrenSum(ctx context.Context, sum []byte) ([]NodeDirChildrenSumRow, error) {
+	rows, err := q.db.QueryContext(ctx, nodeDirChildrenSum, sum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NodeDirChildrenSumRow
+	for rows.Next() {
+		var i NodeDirChildrenSumRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Dir,
+			&i.Sum,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setStorageRootDescription = `-- name: SetStorageRootDescription :exec
 UPDATE ocfl_index_storage_root SET description = ? WHERE id = 1
 `

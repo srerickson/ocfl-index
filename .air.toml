@@ -3,7 +3,7 @@ testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-  args_bin = ["serve", "-f index.sqlite"]
+  args_bin = ["serve", " --driver azure --bucket ocfl --path public-data"]
   bin = "./cmd/ocfl-index/ocfl-index"
   cmd = "go build -o ./cmd/ocfl-index/ocfl-index ./cmd/ocfl-index"
   delay = 1000
