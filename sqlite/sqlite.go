@@ -13,9 +13,9 @@ import (
 
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
+	"github.com/srerickson/ocfl-index/internal/pathtree"
 	"github.com/srerickson/ocfl-index/sqlite/sqlc"
 	"github.com/srerickson/ocfl/ocflv1"
-	"github.com/srerickson/ocfl/pathtree"
 )
 
 const (
@@ -69,7 +69,7 @@ func (db *Index) IndexObject(ctx context.Context, root string, inv *ocflv1.Inven
 	}
 	defer tx.Rollback()
 	queries := sqlc.New(&db.DB).WithTx(tx)
-	rootNodeID, err := addIndexNodes(ctx, queries, tree, 0, "")
+	rootNodeID, err := addIndexNodes(ctx, queries, &tree.Node, 0, "")
 	if err != nil {
 		return errFn(err)
 	}
@@ -77,7 +77,7 @@ func (db *Index) IndexObject(ctx context.Context, root string, inv *ocflv1.Inven
 	if err != nil {
 		return errFn(err)
 	}
-	if err := insertContent(ctx, queries, tree, objID); err != nil {
+	if err := insertContent(ctx, queries, &tree.Node, objID); err != nil {
 		return errFn(err)
 	}
 	// replace existing version entries
@@ -312,18 +312,16 @@ func (idx *Index) existingTables(ctx context.Context) ([]string, error) {
 	return tables, nil
 }
 
-// addIndexNodes adds the node and all its descendants to the index. Unless parentID is 0, a name entry
-// is also created linking the top-level node to the parent.
-func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *index.IndexingTree, parentID int64, name string) (int64, error) {
-	if node.Val == nil {
-		return 0, fmt.Errorf("missing node value, name: %s", name)
-	}
+// addIndexNodes adds the node and all its descendants to the index. Unless
+// parentID is 0, a name entry is also created linking the top-level node to the
+// parent.
+func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *pathtree.Node[index.IndexingVal], parentID int64, name string) (int64, error) {
 	nodeID, isNew, err := getInsertNode(ctx, tx, node.Val.Sum, node.IsDir())
 	if err != nil {
 		return 0, err
 	}
 	if parentID != 0 {
-		// even if getInserNode didn't create a new node, we still need toe add
+		// even if getInserNode didn't create a new node, we still need to add
 		// a new named 'edge' connecting parentID and nodeID.
 		err = tx.InsertNameIgnore(ctx, sqlc.InsertNameIgnoreParams{
 			NodeID:   nodeID,
@@ -339,7 +337,8 @@ func addIndexNodes(ctx context.Context, tx *sqlc.Queries, node *index.IndexingTr
 		// been created.
 		return nodeID, nil
 	}
-	for n := range node.Children {
+	for _, e := range node.DirEntries() {
+		n := e.Name()
 		child, err := node.Get(n)
 		if err != nil {
 			panic(err)
@@ -405,11 +404,8 @@ func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, objID string, objR
 	return obj.ID, false, nil
 }
 
-func insertContent(ctx context.Context, tx *sqlc.Queries, node *index.IndexingTree, objID int64) error {
-	return pathtree.Walk(node, func(name string, isdir bool, val *index.IndexingVal) error {
-		if val == nil {
-			return fmt.Errorf("missing node values for %s", name)
-		}
+func insertContent(ctx context.Context, tx *sqlc.Queries, node *pathtree.Node[index.IndexingVal], objID int64) error {
+	return pathtree.Walk(*node, func(name string, isdir bool, val index.IndexingVal) error {
 		params := sqlc.InsertContentPathIgnoreParams{
 			Sum:      val.Sum,
 			FilePath: val.Path,

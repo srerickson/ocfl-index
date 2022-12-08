@@ -14,6 +14,7 @@ import (
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
 	"github.com/srerickson/ocfl-index/sqlite"
+	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -44,9 +45,6 @@ func TestCreateTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// if created != true {
-	// 	t.Error("expected CreateTables to return true")
-	// }
 }
 
 func TestIndexInventory(t *testing.T) {
@@ -103,17 +101,14 @@ func TestIndexInventory(t *testing.T) {
 			if idxMessage != expMessage {
 				t.Fatalf("indexed version message doesn't match: %v, not %v", idxMessage, expMessage)
 			}
-			verIndex, err := inv.IndexFull(vnum, true, false)
+			verIndex, err := inv.Index(vnum)
 			if err != nil {
-				t.Fatal(err)
-			}
-			if err := verIndex.SetDirDigests(inv.DigestAlgorithm); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := idx.GetContent(ctx, inv.ID, vnum, "."); err != nil {
 				t.Fatal(err)
 			}
-			verIndex.Walk(func(lpath string, isdir bool, vals *ocfl.IndexItem) error {
+			verIndex.Walk(func(lpath string, isdir bool, digs digest.Set, src []string) error {
 				entry, err := idx.GetContent(ctx, inv.ID, vnum, lpath)
 				if err != nil {
 					t.Fatal(inv.ID, vnum, lpath, err)
@@ -121,11 +116,10 @@ func TestIndexInventory(t *testing.T) {
 				if entry.IsDir != isdir {
 					t.Fatalf("expected sqlIndex value to match ocfl.Index value for %s", lpath)
 				}
-				if !strings.EqualFold(entry.Sum, vals.Digests[inv.DigestAlgorithm]) {
-					t.Fatalf("%s: %s != %s", lpath, entry.Sum, vals.Digests[inv.DigestAlgorithm])
-				}
-				if isdir {
-					return nil
+				if !isdir {
+					if !strings.EqualFold(entry.Sum, digs[inv.DigestAlgorithm]) {
+						t.Fatalf("%s: %s != %s", lpath, entry.Sum, digs[inv.DigestAlgorithm])
+					}
 				}
 				return nil
 			})

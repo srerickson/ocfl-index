@@ -29,7 +29,7 @@ func GenInv(conf *GenInvConf) *ocflv1.Inventory {
 		Type:            ocfl.MustParseSpec("1.0").AsInvType(),
 		ID:              conf.ID,
 		Head:            conf.Head,
-		DigestAlgorithm: digest.SHA256,
+		DigestAlgorithm: digest.SHA256id,
 		Manifest:        digest.NewMap(),
 		Versions:        map[ocfl.VNum]*ocflv1.Version{},
 	}
