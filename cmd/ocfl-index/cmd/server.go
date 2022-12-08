@@ -4,11 +4,11 @@ Copyright © 2022
 package cmd
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 
 	"github.com/muesli/coral"
+	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/server"
 	"github.com/srerickson/ocfl-index/sqlite"
 )
@@ -18,21 +18,23 @@ var serveCmd = &coral.Command{
 	Short: "server",
 	Long:  ``,
 	Run: func(cmd *coral.Command, args []string) {
-
 		port := ":8080"
 		if len(args) > 0 {
 			port = args[0]
 		}
-		db, err := sql.Open("sqlite", "file:"+dbFlag)
+		if err := setupFS(cmd.Context(), &fsFlags); err != nil {
+			log.Fatal(err)
+		}
+		db, err := sqlite.New("file:" + dbFlag)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer db.Close()
-		idx := sqlite.New(db)
-		if err := setupFS(cmd.Context(), &fsFlags); err != nil {
+		idx := index.NewService(db, fsFlags.fs, fsFlags.rootDir)
+		if err := idx.Init(cmd.Context()); err != nil {
 			log.Fatal(err)
 		}
-		srv, err := server.New(fsFlags.fs, fsFlags.rootDir, idx)
+		srv, err := server.NewHandler(idx)
 		if err != nil {
 			log.Fatal(err)
 		}

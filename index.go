@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path"
+	"runtime"
 	"sync"
 	"time"
 
@@ -19,7 +22,151 @@ var Version = "devel"
 var ErrNotFound = errors.New("not found")
 var ErrMissingValue = errors.New("missing value")
 
-type Interface interface {
+// Service provides indexing for an OCFL Storage Root
+type Service struct {
+	// set by NewService()
+	Backend
+	fsys        ocfl.FS
+	root        string
+	concurrency int
+	log         logr.Logger
+
+	// set by Init()
+	store *ocflv1.Store
+}
+
+// Option is used by NewService to configure the Service
+type Option func(*Service)
+
+func WithConcurrency(c int) Option {
+	return func(opt *Service) {
+		opt.concurrency = c
+	}
+}
+
+func WithLogger(l logr.Logger) Option {
+	return func(opt *Service) {
+		opt.log = l
+	}
+}
+
+// NewService returns a new Service for OCFL storage root at root in fsys. An indexing
+// backend implementation (currently, sqlite) is also required.
+func NewService(db Backend, fsys ocfl.FS, root string, opts ...Option) *Service {
+	srv := &Service{
+		Backend:     db,
+		fsys:        fsys,
+		root:        root,
+		concurrency: runtime.GOMAXPROCS(-1),
+		log:         logr.Discard(),
+	}
+	for _, o := range opts {
+		o(srv)
+	}
+	return srv
+}
+
+func (srv *Service) Init(ctx context.Context) error {
+	store, err := ocflv1.GetStore(ctx, srv.fsys, srv.root)
+	if err != nil {
+		return err
+	}
+	srv.store = store
+	return nil
+}
+
+// DoIndex() indexes the storage root associated with the service.
+func (srv Service) DoIndex(ctx context.Context) error {
+	srv.log.Info("starting object scan", "root", srv.root, "concurrenct", srv.concurrency)
+	objPaths, err := srv.store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
+		Strict:      false,
+		Concurrency: srv.concurrency,
+	})
+	if err != nil {
+		return fmt.Errorf("scanning storage root: %w", err)
+	}
+	total := len(objPaths)
+	srv.log.Info("indexing objects", "root", srv.root, "object_count", total)
+	if err := indexStore(ctx, srv.Backend, srv.store, objPaths, srv.concurrency); err != nil {
+		return fmt.Errorf("indexing storage root: %w", err)
+	}
+	srv.log.Info("indexing complete", "root", srv.root)
+	return nil
+}
+
+func (srv Service) OpenFile(ctx context.Context, name string) (fs.File, error) {
+	return srv.fsys.OpenFile(ctx, path.Join(srv.root, name))
+}
+
+// concurrent indexing for objects paths in store
+func indexStore(ctx context.Context, idx Backend, store *ocflv1.Store, paths map[string]ocfl.Spec, workers int) error {
+	type job struct {
+		path string
+		inv  *ocflv1.Inventory
+		err  error
+	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+	in := make(chan (*job))
+	go func() {
+		defer close(in)
+	L:
+		for p := range paths {
+			select {
+			case in <- &job{path: p}:
+			case <-ctx.Done():
+				break L
+			}
+		}
+	}()
+	out := make(chan (*job))
+	wg := sync.WaitGroup{}
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for j := range in {
+				obj, err := store.GetObjectPath(ctx, j.path)
+				if err != nil {
+					j.err = err
+					out <- j
+					continue
+				}
+				j.inv, err = obj.Inventory(ctx)
+				if err != nil {
+					j.err = err
+					out <- j
+					continue
+				}
+				out <- j
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	var returnErr error
+	var i int
+	for j := range out {
+		i++
+		if j.err != nil {
+			returnErr = j.err
+			break
+		}
+		err := idx.IndexObject(ctx, j.path, j.inv)
+		if err != nil {
+			returnErr = j.err
+			break
+		}
+	}
+	cancel()
+	return returnErr
+}
+
+// Backend is an interface that can be implemented for different databases for
+// storing the indexing.
+type Backend interface {
 	GetSchemaVersion(ctx context.Context) (int, int, error)
 	MigrateSchema(ctx context.Context, erase bool) (bool, error)
 
@@ -89,126 +236,4 @@ type DirEntry struct {
 	Name  string `json:"name"`
 	Sum   string `json:"digest"`
 	IsDir bool   `json:"dir"`
-}
-
-//
-// IndexStore()
-//
-
-func IndexStore(ctx context.Context, idx Interface, fsys ocfl.FS, root string, opts ...Option) error {
-	conf := indexStoreOptions{
-		concurrency: 4,
-		log:         logr.Discard(),
-	}
-	for _, o := range opts {
-		o(&conf)
-	}
-	if conf.concurrency < 1 {
-		conf.concurrency = 1
-	}
-	store, err := ocflv1.GetStore(ctx, fsys, root)
-	if err != nil {
-		return fmt.Errorf("reading storage root: %w", err)
-	}
-	conf.log.Info("starting object scan", "root", root, "concurrenct", conf.concurrency)
-	objPaths, err := store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
-		Strict:      false,
-		Concurrency: conf.concurrency,
-	})
-	if err != nil {
-		return fmt.Errorf("scanning storage root: %w", err)
-	}
-	total := len(objPaths)
-	conf.log.Info("indexing objects", "root", root, "object_count", total)
-	err = indexStore(ctx, idx, store, objPaths, conf.concurrency)
-	if err != nil {
-		return fmt.Errorf("indexing storage root: %w", err)
-	}
-	conf.log.Info("indexing complete", "root", root)
-	return nil
-}
-
-type indexStoreOptions struct {
-	concurrency int
-	log         logr.Logger
-}
-
-type Option func(*indexStoreOptions)
-
-func WithConcurrency(c int) Option {
-	return func(opt *indexStoreOptions) {
-		opt.concurrency = c
-	}
-}
-
-func WithLogger(l logr.Logger) Option {
-	return func(opt *indexStoreOptions) {
-		opt.log = l
-	}
-}
-
-// concurrent indexing for objects paths in store
-func indexStore(ctx context.Context, idx Interface, store *ocflv1.Store, paths map[string]ocfl.Spec, workers int) error {
-	type job struct {
-		path string
-		inv  *ocflv1.Inventory
-		err  error
-	}
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	in := make(chan (*job))
-	go func() {
-		defer close(in)
-	L:
-		for p := range paths {
-			select {
-			case in <- &job{path: p}:
-			case <-ctx.Done():
-				break L
-			}
-		}
-	}()
-	out := make(chan (*job))
-	wg := sync.WaitGroup{}
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() {
-			defer wg.Done()
-			for j := range in {
-				obj, err := store.GetObjectPath(ctx, j.path)
-				if err != nil {
-					j.err = err
-					out <- j
-					continue
-				}
-				j.inv, err = obj.Inventory(ctx)
-				if err != nil {
-					j.err = err
-					out <- j
-					continue
-				}
-				out <- j
-			}
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(out)
-	}()
-	var returnErr error
-	var i int
-	for j := range out {
-		i++
-		if j.err != nil {
-			returnErr = j.err
-			break
-		}
-		err := idx.IndexObject(ctx, j.path, j.inv)
-		if err != nil {
-			returnErr = j.err
-			break
-		}
-	}
-	cancel()
-	return returnErr
 }

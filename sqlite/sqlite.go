@@ -35,24 +35,29 @@ var (
 	queryListTables string = `SELECT name FROM sqlite_master WHERE type='table';`
 )
 
-type Index struct {
+// Backend is a sqlite-based implementation of index.Backend
+type Backend struct {
 	sql.DB
 }
 
-func New(db *sql.DB) *Index {
+func New(conf string) (*Backend, error) {
+	db, err := sql.Open("sqlite", conf)
+	if err != nil {
+		return nil, err
+	}
 	db.Exec("PRAGMA case_sensitive_like=ON;")
-	return &Index{DB: *db}
+	return &Backend{DB: *db}, nil
 }
 
-func (db *Index) GetStorageRootDescription(ctx context.Context) (string, error) {
+func (db *Backend) GetStorageRootDescription(ctx context.Context) (string, error) {
 	return sqlc.New(&db.DB).GetStorageRootDescription(ctx)
 }
 
-func (db *Index) SetStorageRootDescription(ctx context.Context, desc string) error {
+func (db *Backend) SetStorageRootDescription(ctx context.Context, desc string) error {
 	return sqlc.New(&db.DB).SetStorageRootDescription(ctx, desc)
 }
 
-func (db *Index) IndexObject(ctx context.Context, root string, inv *ocflv1.Inventory) error {
+func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inventory) error {
 	if err := inv.Validate().Err(); err != nil {
 		return fmt.Errorf("inventory is invalid and cannot be indexed: %w", err)
 	}
@@ -105,7 +110,7 @@ func (db *Index) IndexObject(ctx context.Context, root string, inv *ocflv1.Inven
 	return tx.Commit()
 }
 
-func (idx *Index) AllObjects(ctx context.Context) (*index.ListObjectsResult, error) {
+func (idx *Backend) AllObjects(ctx context.Context) (*index.ListObjectsResult, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx)
 	if err != nil {
@@ -128,7 +133,7 @@ func (idx *Index) AllObjects(ctx context.Context) (*index.ListObjectsResult, err
 	return result, nil
 }
 
-func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectResult, error) {
+func (idx *Backend) GetObject(ctx context.Context, objID string) (*index.ObjectResult, error) {
 	qry := sqlc.New(idx)
 	obj, err := qry.GetObjectID(ctx, objID)
 	if err != nil {
@@ -166,7 +171,7 @@ func (idx *Index) GetObject(ctx context.Context, objID string) (*index.ObjectRes
 	return result, nil
 }
 
-func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.ContentResult, error) {
+func (db *Backend) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p string) (*index.ContentResult, error) {
 	p = path.Clean(p)
 	if !fs.ValidPath(p) {
 		return nil, fmt.Errorf("invalid path: %s", p)
@@ -213,7 +218,7 @@ func (db *Index) GetContent(ctx context.Context, objID string, vnum ocfl.VNum, p
 	return &result, nil
 }
 
-func (db *Index) GetContentPath(ctx context.Context, sum string) (string, error) {
+func (db *Backend) GetContentPath(ctx context.Context, sum string) (string, error) {
 	qry := sqlc.New(&db.DB)
 	bytes, err := hex.DecodeString(sum)
 	if err != nil {
@@ -226,7 +231,7 @@ func (db *Index) GetContentPath(ctx context.Context, sum string) (string, error)
 	return path.Join(result.RootPath, result.FilePath), nil
 }
 
-func (db *Index) GetDirChildren(ctx context.Context, sum string) ([]index.DirEntry, error) {
+func (db *Backend) GetDirChildren(ctx context.Context, sum string) ([]index.DirEntry, error) {
 	qry := sqlc.New(&db.DB)
 	bytes, err := hex.DecodeString(sum)
 	if err != nil {
@@ -247,7 +252,7 @@ func (db *Index) GetDirChildren(ctx context.Context, sum string) ([]index.DirEnt
 	return results, nil
 }
 
-func (db *Index) GetSchemaVersion(ctx context.Context) (int, int, error) {
+func (db *Backend) GetSchemaVersion(ctx context.Context) (int, int, error) {
 	eMsg := "can't determine OCFL-Index schema version"
 	qry := sqlc.New(db)
 	ver, err := qry.GetSchemaVersion(ctx)
@@ -259,7 +264,7 @@ func (db *Index) GetSchemaVersion(ctx context.Context) (int, int, error) {
 
 // CreateTable creates all tables index tables. If erase is true any existing
 // "ocfl_index_" tables are erase.
-func (db *Index) MigrateSchema(ctx context.Context, erase bool) (bool, error) {
+func (db *Backend) MigrateSchema(ctx context.Context, erase bool) (bool, error) {
 	tables, err := db.existingTables(ctx)
 	if err != nil {
 		return false, err
@@ -294,7 +299,7 @@ func (db *Index) MigrateSchema(ctx context.Context, erase bool) (bool, error) {
 }
 
 // existingTables returns list of table names in the database with the "ocfl_index_" prefix
-func (idx *Index) existingTables(ctx context.Context) ([]string, error) {
+func (idx *Backend) existingTables(ctx context.Context) ([]string, error) {
 	rows, err := idx.QueryContext(ctx, queryListTables)
 	if err != nil {
 		return nil, err
@@ -418,4 +423,4 @@ func insertContent(ctx context.Context, tx *sqlc.Queries, node *pathtree.Node[in
 	})
 }
 
-var _ index.Interface = (*Index)(nil)
+var _ index.Backend = (*Backend)(nil)

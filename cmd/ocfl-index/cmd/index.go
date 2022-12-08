@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 
 	"github.com/go-logr/stdr"
@@ -60,16 +59,10 @@ func DoIndex(ctx context.Context, fsys ocfl.FS, root string, dbName string, conc
 	if err != nil {
 		return err
 	}
-	major, minor, err := idx.GetSchemaVersion(ctx)
-	if err != nil {
+	log := stdr.New(nil)
+	srv := index.NewService(idx, fsys, root, index.WithConcurrency(conc), index.WithLogger(log))
+	if err := srv.Init(ctx); err != nil {
 		return err
 	}
-	log.Printf("indexing to %s, ocfl-index schema: v%d.%d\n", dbName, major, minor)
-	if err := index.IndexStore(ctx, idx, fsys, root,
-		index.WithConcurrency(conc),
-		index.WithLogger(stdr.New(nil)),
-	); err != nil {
-		return fmt.Errorf("while indexing: %s", err)
-	}
-	return nil
+	return srv.DoIndex(ctx)
 }

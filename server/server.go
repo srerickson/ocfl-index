@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/server/assets"
 	"github.com/srerickson/ocfl-index/server/templates"
@@ -29,21 +28,16 @@ const (
 )
 
 type server struct {
-	fsys         ocfl.FS
-	root         string
-	idx          index.Interface
+	*index.Service
 	tmplRoot     *template.Template
 	tmplObj      *template.Template
 	tmpStatePath *template.Template
 	// mux      *chi.Mux
 }
 
-func New(fsys ocfl.FS, root string, idx index.Interface) (http.Handler, error) {
-	serv := server{
-		fsys: fsys,
-		root: root,
-		idx:  idx,
-	}
+// NewHandler returns new http.Handler for the index service
+func NewHandler(idx *index.Service) (http.Handler, error) {
+	serv := server{Service: idx}
 	// template functions
 	pageFuncs := map[string]any{
 		"objects_path":  objectsPath,
@@ -121,12 +115,12 @@ func (srv *server) downloadHandler() func(http.ResponseWriter, *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		p, err := srv.idx.GetContentPath(r.Context(), sum)
+		p, err := srv.GetContentPath(r.Context(), sum)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		f, err := srv.fsys.OpenFile(r.Context(), path.Join(srv.root, p))
+		f, err := srv.OpenFile(r.Context(), p)
 		if err != nil {
 			panic(err)
 		}
@@ -145,7 +139,7 @@ func (srv *server) showContentHandler() func(http.ResponseWriter, *http.Request)
 		if !ok {
 			panic("state path missing") // FIXME
 		}
-		result, err := srv.idx.GetContent(r.Context(), st.ObjectID, st.Version, st.Path)
+		result, err := srv.GetContent(r.Context(), st.ObjectID, st.Version, st.Path)
 		if err != nil {
 			log.Println(err)
 			http.NotFound(w, r)
@@ -189,7 +183,7 @@ func (srv *server) getObjectHandler() func(http.ResponseWriter, *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		result, err := srv.idx.GetObject(r.Context(), id)
+		result, err := srv.GetObject(r.Context(), id)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -228,7 +222,7 @@ func (srv *server) getObjectHandler() func(http.ResponseWriter, *http.Request) {
 
 func (srv *server) rootList() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		result, err := srv.idx.AllObjects(r.Context())
+		result, err := srv.AllObjects(r.Context())
 		if err != nil {
 			panic(err) // FIXME
 		}
@@ -260,7 +254,7 @@ func (srv *server) partialDir() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 		parentPath := r.Context().Value(statePathKey).(StatePath)
-		children, err := srv.idx.GetDirChildren(r.Context(), sum)
+		children, err := srv.GetDirChildren(r.Context(), sum)
 		if err != nil {
 			http.NotFound(w, r)
 			return

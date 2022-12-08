@@ -72,8 +72,8 @@ func init() {
 	)
 }
 
-func prepareIndex(ctx context.Context, db *sql.DB) (index.Interface, error) {
-	idx := sqlite.New(db)
+func prepareIndex(ctx context.Context, db *sql.DB) (index.Backend, error) {
+	idx := &sqlite.Backend{DB: *db}
 	created, err := idx.MigrateSchema(ctx, false)
 	if err != nil {
 		return nil, err

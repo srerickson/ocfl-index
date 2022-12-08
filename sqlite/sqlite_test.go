@@ -2,7 +2,6 @@ package sqlite_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -19,12 +18,11 @@ import (
 )
 
 func TestCreateTables(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", "file:tmp.sqlite?mode=memory")
+	idx, err := sqlite.New("file:tmp.sqlite?mode=memory")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqlDB.Close()
-	idx := sqlite.New(sqlDB)
+	defer idx.Close()
 	ctx := context.Background()
 	_, err = idx.MigrateSchema(ctx, false)
 	if err != nil {
@@ -49,12 +47,11 @@ func TestCreateTables(t *testing.T) {
 
 func TestIndexInventory(t *testing.T) {
 	const numInvs = 50
-	sqlDB, err := sql.Open("sqlite", "file:test_index_inventory.sqlite?mode=memory")
+	idx, err := sqlite.New("file:test_index_inventory.sqlite?mode=memory")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqlDB.Close()
-	idx := sqlite.New(sqlDB)
+	defer idx.Close()
 	ctx := context.Background()
 	_, err = idx.MigrateSchema(ctx, false)
 	if err != nil {
