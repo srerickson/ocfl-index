@@ -18,6 +18,11 @@ var serveCmd = &coral.Command{
 	Short: "server",
 	Long:  ``,
 	Run: func(cmd *coral.Command, args []string) {
+
+		port := ":8080"
+		if len(args) > 0 {
+			port = args[0]
+		}
 		db, err := sql.Open("sqlite", "file:"+dbFlag)
 		if err != nil {
 			log.Fatal(err)
@@ -31,8 +36,8 @@ var serveCmd = &coral.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println("starting server localhost:8800")
-		if err := http.ListenAndServe(":8800", srv); err != nil {
+		log.Println("starting server on", port)
+		if err := http.ListenAndServe(port, srv); err != nil {
 			log.Fatal(err)
 		}
 	},

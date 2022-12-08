@@ -11,4 +11,6 @@ RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
 WORKDIR /app
 COPY --from=builder /app/ocfl-index /app/ocfl-index
 
-CMD ["/app/ocfl-index", "server"]
+EXPOSE 8080
+
+CMD ["/app/ocfl-index", "server", ":8080"]
