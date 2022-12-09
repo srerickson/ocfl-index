@@ -1,0 +1,12 @@
+version: v1
+plugins:
+  - plugin: go
+    out: gen/proto/go
+    opt: paths=source_relative
+  - plugin: go-grpc
+    out: gen/proto/go
+    opt: paths=source_relative
+  - remote: buf.build/protocolbuffers/plugins/python
+    out: gen/proto/python
+  - remote: buf.build/grpc/plugins/python
+    out: gen/proto/python

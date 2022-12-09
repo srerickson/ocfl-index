@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package ocfl.v1;
+
+import "google/type/datetime.proto";
+
+option go_package = "github.com/srerickson/ocfl-index/protos/ocfl/v1;ocflv1";
+
+message ListObjectsRequest {
+  int32 limit = 1;
+  Order order = 2;
+  string cursor = 3;
+  enum Order {
+    ORDER_UNSPECIFIED = 0;
+    ORDER_ASC_ALPHA = 1;
+    ORDER_DESC_APHA = 2;
+    ORDER_ASC_V1_CREATED = 3;
+    ORDER_DESC_V1_CREATED = 4;
+    ORDER_ASC_HEAD_CREATED = 5;
+    ORDER_DESC_HEAD_CREATED = 6;
+  }
+}
+
+message ListObjectsResponse {
+  message Object {
+    string object_id = 1;
+    string head = 2;
+    google.type.DateTime v1_created = 3;
+    google.type.DateTime head_created = 4;
+  }
+  repeated Object objects = 1;
+}
+
+message GetObjectRequest {
+  string object_id = 1;
+}
+
+message GetObjectResponse {
+  string object_id = 1;
+  string head = 2;
+  string root_path = 3;
+}
+
+service RootIndexService {
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse) {}
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse) {}
+}
