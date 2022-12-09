@@ -12,7 +12,7 @@ import (
 
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
-	"github.com/srerickson/ocfl-index/sqlite"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
 )

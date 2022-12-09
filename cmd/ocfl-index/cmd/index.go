@@ -60,7 +60,7 @@ func DoIndex(ctx context.Context, fsys ocfl.FS, root string, dbName string, conc
 		return err
 	}
 	log := stdr.New(nil)
-	srv := index.NewService(idx, fsys, root, index.WithConcurrency(conc), index.WithLogger(log))
+	srv := index.NewIndex(idx, fsys, root, index.WithConcurrency(conc), index.WithLogger(log))
 	if err := srv.Init(ctx); err != nil {
 		return err
 	}

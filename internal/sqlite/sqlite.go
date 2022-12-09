@@ -14,7 +14,7 @@ import (
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/internal/pathtree"
-	"github.com/srerickson/ocfl-index/sqlite/sqlc"
+	"github.com/srerickson/ocfl-index/internal/sqlite/sqlc"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 

@@ -13,8 +13,8 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl-index/server/assets"
-	"github.com/srerickson/ocfl-index/server/templates"
+	"github.com/srerickson/ocfl-index/internal/server/assets"
+	"github.com/srerickson/ocfl-index/internal/server/templates"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 )
 
 type server struct {
-	*index.Service
+	*index.Index
 	tmplRoot     *template.Template
 	tmplObj      *template.Template
 	tmpStatePath *template.Template
@@ -36,8 +36,8 @@ type server struct {
 }
 
 // NewHandler returns new http.Handler for the index service
-func NewHandler(idx *index.Service) (http.Handler, error) {
-	serv := server{Service: idx}
+func NewHandler(idx *index.Index) (http.Handler, error) {
+	serv := server{Index: idx}
 	// template functions
 	pageFuncs := map[string]any{
 		"objects_path":  objectsPath,

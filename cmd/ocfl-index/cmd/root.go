@@ -17,7 +17,7 @@ import (
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl-index/sqlite"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 	"github.com/srerickson/ocfl/backend/cloud"
 )
 

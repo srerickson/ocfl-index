@@ -9,8 +9,8 @@ import (
 
 	"github.com/muesli/coral"
 	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl-index/server"
-	"github.com/srerickson/ocfl-index/sqlite"
+	"github.com/srerickson/ocfl-index/internal/server"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 )
 
 var serveCmd = &coral.Command{
@@ -30,7 +30,7 @@ var serveCmd = &coral.Command{
 			log.Fatal(err)
 		}
 		defer db.Close()
-		idx := index.NewService(db, fsFlags.fs, fsFlags.rootDir)
+		idx := index.NewIndex(db, fsFlags.fs, fsFlags.rootDir)
 		if err := idx.Init(cmd.Context()); err != nil {
 			log.Fatal(err)
 		}

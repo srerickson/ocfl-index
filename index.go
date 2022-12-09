@@ -22,9 +22,9 @@ var Version = "devel"
 var ErrNotFound = errors.New("not found")
 var ErrMissingValue = errors.New("missing value")
 
-// Service provides indexing for an OCFL Storage Root
-type Service struct {
-	// set by NewService()
+// Index provides indexing for an OCFL Storage Root
+type Index struct {
+	// set by NewIndex()
 	Backend
 	fsys        ocfl.FS
 	root        string
@@ -35,25 +35,25 @@ type Service struct {
 	store *ocflv1.Store
 }
 
-// Option is used by NewService to configure the Service
-type Option func(*Service)
+// Option is used by NewIndex to configure the Index
+type Option func(*Index)
 
 func WithConcurrency(c int) Option {
-	return func(opt *Service) {
+	return func(opt *Index) {
 		opt.concurrency = c
 	}
 }
 
 func WithLogger(l logr.Logger) Option {
-	return func(opt *Service) {
+	return func(opt *Index) {
 		opt.log = l
 	}
 }
 
-// NewService returns a new Service for OCFL storage root at root in fsys. An indexing
+// NewIndex returns a new Index for OCFL storage root at root in fsys. An indexing
 // backend implementation (currently, sqlite) is also required.
-func NewService(db Backend, fsys ocfl.FS, root string, opts ...Option) *Service {
-	srv := &Service{
+func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
+	idx := &Index{
 		Backend:     db,
 		fsys:        fsys,
 		root:        root,
@@ -61,41 +61,41 @@ func NewService(db Backend, fsys ocfl.FS, root string, opts ...Option) *Service 
 		log:         logr.Discard(),
 	}
 	for _, o := range opts {
-		o(srv)
+		o(idx)
 	}
-	return srv
+	return idx
 }
 
-func (srv *Service) Init(ctx context.Context) error {
-	store, err := ocflv1.GetStore(ctx, srv.fsys, srv.root)
+func (idx *Index) Init(ctx context.Context) error {
+	store, err := ocflv1.GetStore(ctx, idx.fsys, idx.root)
 	if err != nil {
 		return err
 	}
-	srv.store = store
+	idx.store = store
 	return nil
 }
 
-// DoIndex() indexes the storage root associated with the service.
-func (srv Service) DoIndex(ctx context.Context) error {
-	srv.log.Info("starting object scan", "root", srv.root, "concurrenct", srv.concurrency)
-	objPaths, err := srv.store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
+// DoIndex() indexes the storage root associated with the index.
+func (idx Index) DoIndex(ctx context.Context) error {
+	idx.log.Info("starting object scan", "root", idx.root, "concurrenct", idx.concurrency)
+	objPaths, err := idx.store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
 		Strict:      false,
-		Concurrency: srv.concurrency,
+		Concurrency: idx.concurrency,
 	})
 	if err != nil {
 		return fmt.Errorf("scanning storage root: %w", err)
 	}
 	total := len(objPaths)
-	srv.log.Info("indexing objects", "root", srv.root, "object_count", total)
-	if err := indexStore(ctx, srv.Backend, srv.store, objPaths, srv.concurrency); err != nil {
+	idx.log.Info("indexing objects", "root", idx.root, "object_count", total)
+	if err := indexStore(ctx, idx.Backend, idx.store, objPaths, idx.concurrency); err != nil {
 		return fmt.Errorf("indexing storage root: %w", err)
 	}
-	srv.log.Info("indexing complete", "root", srv.root)
+	idx.log.Info("indexing complete", "root", idx.root)
 	return nil
 }
 
-func (srv Service) OpenFile(ctx context.Context, name string) (fs.File, error) {
-	return srv.fsys.OpenFile(ctx, path.Join(srv.root, name))
+func (idx Index) OpenFile(ctx context.Context, name string) (fs.File, error) {
+	return idx.fsys.OpenFile(ctx, path.Join(idx.root, name))
 }
 
 // concurrent indexing for objects paths in store
