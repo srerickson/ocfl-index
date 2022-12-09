@@ -4,7 +4,7 @@ package ocfl.v1;
 
 import "google/type/datetime.proto";
 
-option go_package = "github.com/srerickson/ocfl-index/protos/ocfl/v1;ocflv1";
+option go_package = "github.com/srerickson/ocfl-index/gen/ocfl/v1;ocflv1";
 
 message ListObjectsRequest {
   int32 limit = 1;
