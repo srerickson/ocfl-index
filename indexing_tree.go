@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 
+	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/pathtree"
 	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
@@ -69,19 +70,20 @@ func InventoryTree(inv *ocflv1.Inventory) (*IndexingTree, error) {
 		if err != nil {
 			return nil, fmt.Errorf("indexing %s: %w", vnum, err)
 		}
-		walkFn := func(name string, isdir bool, digs digest.Set, src []string) error {
-			if isdir {
+		walkFn := func(name string, n *ocfl.Index) error {
+			if n.IsDir() {
 				return nil
 			}
-			if len(src) == 0 {
+			item := n.Val()
+			if len(item.SrcPaths) == 0 {
 				return fmt.Errorf("inventory has missing content path for '%s'", name)
 			}
-			sumstr := digs[alg.ID()]
+			sumstr := item.Digests[alg.ID()]
 			if sumstr == "" {
 				return fmt.Errorf("inventory has missing %s for %s", alg.ID(), name)
 			}
 			var err error
-			newVal := IndexingVal{Path: src[0]}
+			newVal := IndexingVal{Path: item.SrcPaths[0]}
 			newVal.Sum, err = hex.DecodeString(sumstr)
 			if err != nil {
 				return fmt.Errorf("inventory has invalid digest for %s: %w", name, err)

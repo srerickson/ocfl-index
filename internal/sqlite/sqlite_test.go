@@ -13,7 +13,6 @@ import (
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
 	"github.com/srerickson/ocfl-index/internal/sqlite"
-	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -105,17 +104,18 @@ func TestIndexInventory(t *testing.T) {
 			if _, err := idx.GetContent(ctx, inv.ID, vnum, "."); err != nil {
 				t.Fatal(err)
 			}
-			verIndex.Walk(func(lpath string, isdir bool, digs digest.Set, src []string) error {
+			verIndex.Walk(func(lpath string, n *ocfl.Index) error {
 				entry, err := idx.GetContent(ctx, inv.ID, vnum, lpath)
 				if err != nil {
 					t.Fatal(inv.ID, vnum, lpath, err)
 				}
-				if entry.IsDir != isdir {
+				if entry.IsDir != n.IsDir() {
 					t.Fatalf("expected sqlIndex value to match ocfl.Index value for %s", lpath)
 				}
-				if !isdir {
-					if !strings.EqualFold(entry.Sum, digs[inv.DigestAlgorithm]) {
-						t.Fatalf("%s: %s != %s", lpath, entry.Sum, digs[inv.DigestAlgorithm])
+				if !n.IsDir() {
+					item := n.Val()
+					if !strings.EqualFold(entry.Sum, item.Digests[inv.DigestAlgorithm]) {
+						t.Fatalf("%s: %s != %s", lpath, entry.Sum, item.Digests[inv.DigestAlgorithm])
 					}
 				}
 				return nil
