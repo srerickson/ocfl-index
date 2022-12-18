@@ -11,6 +11,8 @@ import (
 	index "github.com/srerickson/ocfl-index"
 	"github.com/srerickson/ocfl-index/internal/server"
 	"github.com/srerickson/ocfl-index/internal/sqlite"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 var serveCmd = &coral.Command{
@@ -39,7 +41,7 @@ var serveCmd = &coral.Command{
 			log.Fatal(err)
 		}
 		log.Println("starting server on", port)
-		if err := http.ListenAndServe(port, srv); err != nil {
+		if err := http.ListenAndServe(port, h2c.NewHandler(srv, &http2.Server{})); err != nil {
 			log.Fatal(err)
 		}
 	},

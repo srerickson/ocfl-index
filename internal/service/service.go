@@ -11,7 +11,7 @@ import (
 )
 
 type Service struct {
-	index.Index
+	*index.Index
 }
 
 // Service implements the service generated with connect-go

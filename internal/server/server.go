@@ -13,8 +13,10 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	index "github.com/srerickson/ocfl-index"
+	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
 	"github.com/srerickson/ocfl-index/internal/server/assets"
 	"github.com/srerickson/ocfl-index/internal/server/templates"
+	"github.com/srerickson/ocfl-index/internal/service"
 )
 
 const (
@@ -63,6 +65,9 @@ func NewHandler(idx *index.Index) (http.Handler, error) {
 	// routes
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
+
+	// rpc serverice
+	mux.Mount(ocflv1connect.NewRootIndexServiceHandler(service.Service{Index: idx}))
 
 	// HTML
 	mux.Route(objectsPrefix, func(r chi.Router) {
