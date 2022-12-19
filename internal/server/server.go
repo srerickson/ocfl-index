@@ -12,15 +12,7 @@ import (
 	"github.com/srerickson/ocfl-index/internal/service"
 )
 
-const (
-	jsonResp       = "application/json; charset=UTF-8"
-	htmlResp       = "text/html; charset=UTF-8"
-	apiPrefix      = "/api"
-	objectsPrefix  = "/objects"
-	downloadPrefix = "/download"
-	assetPrefix    = "/assets"
-	dirtreePrefix  = "/component/dirtree"
-)
+const downloadPrefix = "/download"
 
 type server struct {
 	*index.Index
