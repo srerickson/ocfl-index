@@ -110,7 +110,7 @@ func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inv
 	return tx.Commit()
 }
 
-func (idx *Backend) ListObjects(ctx context.Context) (*index.ListObjectsResult, error) {
+func (idx *Backend) ListObjects(ctx context.Context) ([]index.ObjectListItem, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx, sqlc.ListObjectsParams{
 		ID:    0,
@@ -119,9 +119,9 @@ func (idx *Backend) ListObjects(ctx context.Context) (*index.ListObjectsResult, 
 	if err != nil {
 		return nil, err
 	}
-	objects := make([]*index.ObjectMeta, len(rows))
+	objects := make([]index.ObjectListItem, len(rows))
 	for i := range rows {
-		obj := &index.ObjectMeta{}
+		obj := index.ObjectListItem{}
 		obj.HeadCreated = rows[i].Created
 		err := ocfl.ParseVNum(rows[i].Head, &obj.Head)
 		if err != nil {
@@ -130,13 +130,10 @@ func (idx *Backend) ListObjects(ctx context.Context) (*index.ListObjectsResult, 
 		obj.ID = rows[i].OcflID
 		objects[i] = obj
 	}
-	result := &index.ListObjectsResult{
-		Objects: objects,
-	}
-	return result, nil
+	return objects, nil
 }
 
-func (idx *Backend) GetObject(ctx context.Context, objID string) (*index.ObjectResult, error) {
+func (idx *Backend) GetObject(ctx context.Context, objID string) (*index.ObjectDetails, error) {
 	qry := sqlc.New(idx)
 	obj, err := qry.GetObjectID(ctx, objID)
 	if err != nil {
@@ -165,11 +162,13 @@ func (idx *Backend) GetObject(ctx context.Context, objID string) (*index.ObjectR
 		}
 		vers[i] = ver
 	}
-	result := &index.ObjectResult{
+	result := &index.ObjectDetails{
 		ID:       objID,
-		Head:     obj.Head,
 		RootPath: obj.RootPath,
 		Versions: vers,
+	}
+	if err := ocfl.ParseVNum(obj.Head, &result.Head); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

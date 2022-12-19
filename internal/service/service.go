@@ -24,9 +24,9 @@ func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.List
 		return nil, err
 	}
 	msg := &api.ListObjectsResponse{
-		Objects: make([]*api.ListObjectsResponse_Object, len(objects.Objects)),
+		Objects: make([]*api.ListObjectsResponse_Object, len(objects)),
 	}
-	for i, meta := range objects.Objects {
+	for i, meta := range objects {
 		msg.Objects[i] = &api.ListObjectsResponse_Object{
 			ObjectId: meta.ID,
 			Head:     meta.Head.String()}

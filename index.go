@@ -179,8 +179,8 @@ type Backend interface {
 	IndexObject(ctx context.Context, objPath string, rootInv *ocflv1.Inventory) error
 
 	// object/version/path API
-	ListObjects(ctx context.Context) (*ListObjectsResult, error)
-	GetObject(ctx context.Context, objectID string) (*ObjectResult, error)
+	ListObjects(ctx context.Context) ([]ObjectListItem, error)
+	GetObject(ctx context.Context, objectID string) (*ObjectDetails, error)
 	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
 
 	// sum-based getters
@@ -193,25 +193,25 @@ type Backend interface {
 	//HealthChecks(ctx) (Stats, error)
 }
 
-// ListObjectsResult is an index response, suitable for json marshaling
-type ListObjectsResult struct {
-	Objects []*ObjectMeta `json:"objects"`
-}
-
-// ObjectMeta represents indexed OCFL object metadata
-type ObjectMeta struct {
+// ObjectListItem is short-form object details for object lists
+type ObjectListItem struct {
 	ID          string    // OCFL Object ID
 	Head        ocfl.VNum // most recent version
+	Spec        ocfl.Spec // Object's OCFL Spec version
+	V1Created   time.Time // date of first version
 	HeadCreated time.Time // date of most recent version
 }
 
-// ObjectResult is an index response, suitable for json marshaling
-type ObjectResult struct {
+// ObjectDetails is detailed information about an object, as stored in the index.
+type ObjectDetails struct {
 	// OCFL Object ID
-	ID       string         `json:"object_id"`
-	Head     string         `json:"head"`
-	RootPath string         `json:"root_path"`
-	Versions []*VersionMeta `json:"versions"`
+	ID              string
+	Spec            ocfl.Spec // Object's OCFL Spec version
+	Head            ocfl.VNum
+	DigestAlgorithm string
+	InventoryDigest string
+	RootPath        string
+	Versions        []*VersionMeta
 }
 
 // VersionMeta represents indexed OCFL object version metadata
