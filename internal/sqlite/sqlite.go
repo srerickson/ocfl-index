@@ -112,7 +112,10 @@ func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inv
 
 func (idx *Backend) AllObjects(ctx context.Context) (*index.ListObjectsResult, error) {
 	qry := sqlc.New(idx)
-	rows, err := qry.ListObjects(ctx)
+	rows, err := qry.ListObjects(ctx, sqlc.ListObjectsParams{
+		ID:    0,
+		Limit: 10_000, // fixme: currently limited to 10,000 objects
+	})
 	if err != nil {
 		return nil, err
 	}

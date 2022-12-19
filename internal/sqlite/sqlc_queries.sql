@@ -22,7 +22,15 @@ SELECT description FROM ocfl_index_storage_root WHERE id = 1;
 -- OCFL Object
 -- 
 -- name: InsertObject :execlastid
-INSERT INTO ocfl_index_objects (ocfl_id, root_path, node_id, head) values (?, ?, ?, ?);
+INSERT INTO ocfl_index_objects (
+    ocfl_id, 
+    spec, 
+    digest_algorithm, 
+    inventory_digest, 
+    root_path, 
+    node_id, 
+    head
+    ) values (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetObjectID :one
 SELECT * FROM ocfl_index_objects WHERE ocfl_id = ?;
@@ -31,19 +39,31 @@ SELECT * FROM ocfl_index_objects WHERE ocfl_id = ?;
 SELECT 
     objects.id, 
     objects.ocfl_id,
+    objects.spec, 
+    objects.digest_algorithm,
+    objects.inventory_digest,
     objects.head,
-    versions.created version_created, 
     objects.node_id object_node_id,
+    versions.created version_created, 
     names.node_id head_node_id
 FROM ocfl_index_objects objects
 INNER JOIN ocfl_index_object_versions versions 
     ON objects.id = versions.object_id AND objects.head = versions.name
 INNER JOIN ocfl_index_names names 
     ON names.parent_id = objects.node_id AND names.name = objects.head
-ORDER BY versions.created DESC;
+WHERE 
+    objects.id > ?
+ORDER BY objects.id ASC
+LIMIT ?;
 
 -- name: UpdateObject :exec
-UPDATE ocfl_index_objects SET node_id = ?, head = ? WHERE id = ?;
+UPDATE ocfl_index_objects SET 
+    spec = ?, 
+    digest_algorithm = ?, 
+    inventory_digest = ?, 
+    node_id = ?, 
+    head = ? 
+    WHERE id = ?;
 
 -- name: DeleteObject :exec
 DELETE from ocfl_index_objects WHERE id = ?;

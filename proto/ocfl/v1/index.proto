@@ -36,9 +36,21 @@ message GetObjectRequest {
 }
 
 message GetObjectResponse {
+  message Version {
+    message User {
+      string name = 1;
+      string address = 2;
+    }
+    string num = 1;
+    string message = 2;
+    google.type.DateTime  created = 3;
+    optional User user = 4;
+  }
   string object_id = 1;
-  string head = 2;
+  string spec=2;
   string root_path = 3;
+  string digest_algorithm = 4;
+  repeated Version versions = 5;
 }
 
 service RootIndexService {

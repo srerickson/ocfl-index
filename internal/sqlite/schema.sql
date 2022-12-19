@@ -22,6 +22,9 @@ INSERT INTO ocfl_index_storage_root (id, description) VALUES (1, "");
 create table ocfl_index_objects (
     id INTEGER PRIMARY KEY, -- internal identifier
     ocfl_id TEXT NOT NULL, -- OCFL Object ID
+    spec TEXT NOT NULL, -- OCFL specification version
+    digest_algorithm TEXT NOT NULL, -- Inventory digest algorithm
+    inventory_digest TEXT NOT NULL, -- Inventory checksum
     root_path TEXT NOT NULL, -- object path relative to storage root's path
     head TEXT NOT NULL, -- version number (e.g., 'v4')
     node_id INTEGER NOT NULL REFERENCES ocfl_index_nodes(id), -- root node for the object
