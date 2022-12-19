@@ -19,7 +19,7 @@ type Service struct {
 var _ (ocflv1connect.RootIndexServiceHandler) = (*Service)(nil)
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
-	objects, err := srv.Index.AllObjects(ctx)
+	objects, err := srv.Index.ListObjects(ctx)
 	if err != nil {
 		return nil, err
 	}

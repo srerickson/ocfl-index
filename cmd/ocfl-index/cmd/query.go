@@ -77,7 +77,7 @@ func DoQuery(ctx context.Context, dbName string, c *queryConfig) error {
 	}
 	if c.objectID == "" && c.path == "" {
 		// list all objects
-		objRes, err := idx.AllObjects(ctx)
+		objRes, err := idx.ListObjects(ctx)
 		if err != nil {
 			return err
 		}

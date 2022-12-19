@@ -179,7 +179,7 @@ type Backend interface {
 	IndexObject(ctx context.Context, objPath string, rootInv *ocflv1.Inventory) error
 
 	// object/version/path API
-	AllObjects(ctx context.Context) (*ListObjectsResult, error)
+	ListObjects(ctx context.Context) (*ListObjectsResult, error)
 	GetObject(ctx context.Context, objectID string) (*ObjectResult, error)
 	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
 
@@ -195,15 +195,14 @@ type Backend interface {
 
 // ListObjectsResult is an index response, suitable for json marshaling
 type ListObjectsResult struct {
-	Description string        `json:"description"`
-	Objects     []*ObjectMeta `json:"objects"`
+	Objects []*ObjectMeta `json:"objects"`
 }
 
 // ObjectMeta represents indexed OCFL object metadata
 type ObjectMeta struct {
-	ID          string    `json:"object_id"`    // OCFL Object ID
-	Head        ocfl.VNum `json:"head"`         // most recent version
-	HeadCreated time.Time `json:"head_created"` // date of most recent version
+	ID          string    // OCFL Object ID
+	Head        ocfl.VNum // most recent version
+	HeadCreated time.Time // date of most recent version
 }
 
 // ObjectResult is an index response, suitable for json marshaling

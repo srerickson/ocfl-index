@@ -78,7 +78,7 @@ func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inv
 	if err != nil {
 		return errFn(err)
 	}
-	objID, _, err := upsertObjectNode(ctx, queries, inv.ID, root, rootNodeID, inv.Head)
+	objID, _, err := upsertObjectNode(ctx, queries, inv, root, rootNodeID)
 	if err != nil {
 		return errFn(err)
 	}
@@ -110,7 +110,7 @@ func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inv
 	return tx.Commit()
 }
 
-func (idx *Backend) AllObjects(ctx context.Context) (*index.ListObjectsResult, error) {
+func (idx *Backend) ListObjects(ctx context.Context) (*index.ListObjectsResult, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx, sqlc.ListObjectsParams{
 		ID:    0,
@@ -382,17 +382,19 @@ func getInsertNode(ctx context.Context, qry *sqlc.Queries, sum []byte, dir bool)
 	return id, false, nil
 }
 
-func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, objID string, objRoot string, nodeID int64, head ocfl.VNum) (int64, bool, error) {
-	obj, err := qry.GetObjectID(ctx, objID)
+func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, inv *ocflv1.Inventory, objRoot string, nodeID int64) (int64, bool, error) {
+	obj, err := qry.GetObjectID(ctx, inv.ID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return 0, false, err
 		}
 		id, err := qry.InsertObject(ctx, sqlc.InsertObjectParams{
-			OcflID:   objID,
-			RootPath: objRoot,
-			NodeID:   nodeID,
-			Head:     head.String(),
+			OcflID:          inv.ID,
+			Head:            inv.Head.String(),
+			Spec:            inv.Type.Spec.String(),
+			DigestAlgorithm: inv.DigestAlgorithm,
+			RootPath:        objRoot,
+			NodeID:          nodeID,
 		})
 		if err != nil {
 			return 0, false, err
@@ -401,9 +403,11 @@ func upsertObjectNode(ctx context.Context, qry *sqlc.Queries, objID string, objR
 	}
 	if obj.NodeID != nodeID {
 		err = qry.UpdateObject(ctx, sqlc.UpdateObjectParams{
-			NodeID: nodeID,
-			ID:     obj.ID,
-			Head:   head.String(),
+			NodeID:          nodeID,
+			ID:              obj.ID,
+			Head:            inv.Head.String(),
+			Spec:            inv.Type.Spec.String(),
+			DigestAlgorithm: inv.DigestAlgorithm,
 		})
 		if err != nil {
 			return 0, false, err
