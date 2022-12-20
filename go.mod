@@ -12,7 +12,6 @@ require (
 	github.com/srerickson/ocfl v0.0.10
 	gocloud.dev v0.26.0
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
-	google.golang.org/genproto v0.0.0-20220401170504-314d38edb7de
 	google.golang.org/protobuf v1.28.1
 	modernc.org/sqlite v1.18.0
 )
@@ -67,6 +66,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/api v0.74.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20220401170504-314d38edb7de // indirect
 	google.golang.org/grpc v1.45.0 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.36.1 // indirect
