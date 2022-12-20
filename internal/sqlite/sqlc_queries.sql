@@ -9,13 +9,23 @@ SELECT * FROM ocfl_index_schema LIMIT 1;
 
 -- 
 -- OCFL Storage Root
--- table has only one row; its id = 1.
+-- table has only one row (id = 1).
 --
--- name: SetStorageRootDescription :exec
-UPDATE ocfl_index_storage_root SET description = ? WHERE id = 1;
+-- name: SetStorageRoot :exec
+UPDATE ocfl_index_storage_root SET 
+    description = ?,
+    root_path = ?,
+    spec = ?,
+    indexed_at = 0
+WHERE id = 1;
 
--- name: GetStorageRootDescription :one
-SELECT description FROM ocfl_index_storage_root WHERE id = 1;
+-- name: SetStorageRootIndexed :exec
+UPDATE ocfl_index_storage_root SET 
+    indexed_at=DATETIME('now')
+WHERE id = 1;
+
+-- name: GetStorageRoot :one
+SELECT * FROM ocfl_index_storage_root WHERE id = 1;
 
 
 --
@@ -55,6 +65,9 @@ WHERE
     objects.id > ?
 ORDER BY objects.id ASC
 LIMIT ?;
+
+-- name: CountObjects :one
+SELECT COUNT(id) from ocfl_index_objects;
 
 -- name: UpdateObject :exec
 UPDATE ocfl_index_objects SET 

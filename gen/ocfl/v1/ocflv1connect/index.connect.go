@@ -27,6 +27,7 @@ const (
 
 // RootIndexServiceClient is a client for the ocfl.v1.RootIndexService service.
 type RootIndexServiceClient interface {
+	Summary(context.Context, *connect_go.Request[v1.SummaryRequest]) (*connect_go.Response[v1.SummaryResponse], error)
 	ListObjects(context.Context, *connect_go.Request[v1.ListObjectsRequest]) (*connect_go.Response[v1.ListObjectsResponse], error)
 	GetObject(context.Context, *connect_go.Request[v1.GetObjectRequest]) (*connect_go.Response[v1.GetObjectResponse], error)
 }
@@ -41,6 +42,11 @@ type RootIndexServiceClient interface {
 func NewRootIndexServiceClient(httpClient connect_go.HTTPClient, baseURL string, opts ...connect_go.ClientOption) RootIndexServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &rootIndexServiceClient{
+		summary: connect_go.NewClient[v1.SummaryRequest, v1.SummaryResponse](
+			httpClient,
+			baseURL+"/ocfl.v1.RootIndexService/Summary",
+			opts...,
+		),
 		listObjects: connect_go.NewClient[v1.ListObjectsRequest, v1.ListObjectsResponse](
 			httpClient,
 			baseURL+"/ocfl.v1.RootIndexService/ListObjects",
@@ -56,8 +62,14 @@ func NewRootIndexServiceClient(httpClient connect_go.HTTPClient, baseURL string,
 
 // rootIndexServiceClient implements RootIndexServiceClient.
 type rootIndexServiceClient struct {
+	summary     *connect_go.Client[v1.SummaryRequest, v1.SummaryResponse]
 	listObjects *connect_go.Client[v1.ListObjectsRequest, v1.ListObjectsResponse]
 	getObject   *connect_go.Client[v1.GetObjectRequest, v1.GetObjectResponse]
+}
+
+// Summary calls ocfl.v1.RootIndexService.Summary.
+func (c *rootIndexServiceClient) Summary(ctx context.Context, req *connect_go.Request[v1.SummaryRequest]) (*connect_go.Response[v1.SummaryResponse], error) {
+	return c.summary.CallUnary(ctx, req)
 }
 
 // ListObjects calls ocfl.v1.RootIndexService.ListObjects.
@@ -72,6 +84,7 @@ func (c *rootIndexServiceClient) GetObject(ctx context.Context, req *connect_go.
 
 // RootIndexServiceHandler is an implementation of the ocfl.v1.RootIndexService service.
 type RootIndexServiceHandler interface {
+	Summary(context.Context, *connect_go.Request[v1.SummaryRequest]) (*connect_go.Response[v1.SummaryResponse], error)
 	ListObjects(context.Context, *connect_go.Request[v1.ListObjectsRequest]) (*connect_go.Response[v1.ListObjectsResponse], error)
 	GetObject(context.Context, *connect_go.Request[v1.GetObjectRequest]) (*connect_go.Response[v1.GetObjectResponse], error)
 }
@@ -83,6 +96,11 @@ type RootIndexServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewRootIndexServiceHandler(svc RootIndexServiceHandler, opts ...connect_go.HandlerOption) (string, http.Handler) {
 	mux := http.NewServeMux()
+	mux.Handle("/ocfl.v1.RootIndexService/Summary", connect_go.NewUnaryHandler(
+		"/ocfl.v1.RootIndexService/Summary",
+		svc.Summary,
+		opts...,
+	))
 	mux.Handle("/ocfl.v1.RootIndexService/ListObjects", connect_go.NewUnaryHandler(
 		"/ocfl.v1.RootIndexService/ListObjects",
 		svc.ListObjects,
@@ -98,6 +116,10 @@ func NewRootIndexServiceHandler(svc RootIndexServiceHandler, opts ...connect_go.
 
 // UnimplementedRootIndexServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedRootIndexServiceHandler struct{}
+
+func (UnimplementedRootIndexServiceHandler) Summary(context.Context, *connect_go.Request[v1.SummaryRequest]) (*connect_go.Response[v1.SummaryResponse], error) {
+	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v1.RootIndexService.Summary is not implemented"))
+}
 
 func (UnimplementedRootIndexServiceHandler) ListObjects(context.Context, *connect_go.Request[v1.ListObjectsRequest]) (*connect_go.Response[v1.ListObjectsResponse], error) {
 	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v1.RootIndexService.ListObjects is not implemented"))

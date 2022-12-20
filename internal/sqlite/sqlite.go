@@ -49,12 +49,43 @@ func New(conf string) (*Backend, error) {
 	return &Backend{DB: *db}, nil
 }
 
-func (db *Backend) GetStorageRootDescription(ctx context.Context) (string, error) {
-	return sqlc.New(&db.DB).GetStorageRootDescription(ctx)
+func (db *Backend) GetStoreSummary(ctx context.Context) (index.StoreSummary, error) {
+	qry := sqlc.New(&db.DB)
+	row, err := qry.GetStorageRoot(ctx)
+	if err != nil {
+		return index.StoreSummary{}, fmt.Errorf("GetStorgaeRoot: %w", err)
+	}
+	count, err := qry.CountObjects(ctx)
+	if err != nil {
+		return index.StoreSummary{}, err
+	}
+	summ := index.StoreSummary{
+		Description: row.Description,
+		RootPath:    row.RootPath,
+		NumObjects:  int(count),
+	}
+	if row.IndexedAt.Valid {
+		summ.IndexedAt = row.IndexedAt.Time
+	}
+	if row.Spec != "" {
+		if err := ocfl.ParseSpec(row.Spec, &summ.Spec); err != nil {
+			return index.StoreSummary{}, err
+		}
+	}
+
+	return summ, nil
 }
 
-func (db *Backend) SetStorageRootDescription(ctx context.Context, desc string) error {
-	return sqlc.New(&db.DB).SetStorageRootDescription(ctx, desc)
+func (db *Backend) SetStorageRoot(ctx context.Context, root string, desc string, spec ocfl.Spec) error {
+	return sqlc.New(&db.DB).SetStorageRoot(ctx, sqlc.SetStorageRootParams{
+		Description: desc,
+		RootPath:    root,
+		Spec:        spec.String(),
+	})
+}
+
+func (db *Backend) SetStorageRootIndexed(ctx context.Context) error {
+	return sqlc.New(&db.DB).SetStorageRootIndexed(ctx)
 }
 
 func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inventory) error {

@@ -5,6 +5,7 @@
 package sqlc
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -54,5 +55,8 @@ type OcflIndexSchema struct {
 
 type OcflIndexStorageRoot struct {
 	ID          int64
+	RootPath    string
 	Description string
+	Spec        string
+	IndexedAt   sql.NullTime
 }

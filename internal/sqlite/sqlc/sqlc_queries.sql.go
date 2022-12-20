@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+const countObjects = `-- name: CountObjects :one
+SELECT COUNT(id) from ocfl_index_objects
+`
+
+func (q *Queries) CountObjects(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countObjects)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteObject = `-- name: DeleteObject :exec
 DELETE from ocfl_index_objects WHERE id = ?
 `
@@ -98,15 +109,21 @@ func (q *Queries) GetSchemaVersion(ctx context.Context) (OcflIndexSchema, error)
 	return i, err
 }
 
-const getStorageRootDescription = `-- name: GetStorageRootDescription :one
-SELECT description FROM ocfl_index_storage_root WHERE id = 1
+const getStorageRoot = `-- name: GetStorageRoot :one
+SELECT id, root_path, description, spec, indexed_at FROM ocfl_index_storage_root WHERE id = 1
 `
 
-func (q *Queries) GetStorageRootDescription(ctx context.Context) (string, error) {
-	row := q.db.QueryRowContext(ctx, getStorageRootDescription)
-	var description string
-	err := row.Scan(&description)
-	return description, err
+func (q *Queries) GetStorageRoot(ctx context.Context) (OcflIndexStorageRoot, error) {
+	row := q.db.QueryRowContext(ctx, getStorageRoot)
+	var i OcflIndexStorageRoot
+	err := row.Scan(
+		&i.ID,
+		&i.RootPath,
+		&i.Description,
+		&i.Spec,
+		&i.IndexedAt,
+	)
+	return i, err
 }
 
 const insertContentPathIgnore = `-- name: InsertContentPathIgnore :exec
@@ -439,14 +456,36 @@ func (q *Queries) NodeDirChildrenSum(ctx context.Context, sum []byte) ([]NodeDir
 	return items, nil
 }
 
-const setStorageRootDescription = `-- name: SetStorageRootDescription :exec
-UPDATE ocfl_index_storage_root SET description = ? WHERE id = 1
+const setStorageRoot = `-- name: SetStorageRoot :exec
+UPDATE ocfl_index_storage_root SET 
+    description = ?,
+    root_path = ?,
+    spec = ?,
+    indexed_at = 0
+WHERE id = 1
 `
 
+type SetStorageRootParams struct {
+	Description string
+	RootPath    string
+	Spec        string
+}
+
 // OCFL Storage Root
-// table has only one row; its id = 1.
-func (q *Queries) SetStorageRootDescription(ctx context.Context, description string) error {
-	_, err := q.db.ExecContext(ctx, setStorageRootDescription, description)
+// table has only one row (id = 1).
+func (q *Queries) SetStorageRoot(ctx context.Context, arg SetStorageRootParams) error {
+	_, err := q.db.ExecContext(ctx, setStorageRoot, arg.Description, arg.RootPath, arg.Spec)
+	return err
+}
+
+const setStorageRootIndexed = `-- name: SetStorageRootIndexed :exec
+UPDATE ocfl_index_storage_root SET 
+    indexed_at=DATETIME('now')
+WHERE id = 1
+`
+
+func (q *Queries) SetStorageRootIndexed(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, setStorageRootIndexed)
 	return err
 }
 

@@ -71,6 +71,17 @@ func (idx *Index) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	summ, err := idx.GetStoreSummary(ctx)
+	if err != nil {
+		return err
+	}
+	if summ.RootPath != idx.root {
+		// Question: What is the best way to handle existing values in
+		// index file that don't match?
+		if err := idx.SetStorageRoot(ctx, idx.root, store.Description(), store.Spec()); err != nil {
+			return err
+		}
+	}
 	idx.store = store
 	return nil
 }
@@ -90,6 +101,7 @@ func (idx Index) DoIndex(ctx context.Context) error {
 	if err := indexStore(ctx, idx.Backend, idx.store, objPaths, idx.concurrency); err != nil {
 		return fmt.Errorf("indexing storage root: %w", err)
 	}
+	idx.SetStorageRootIndexed(ctx)
 	idx.log.Info("indexing complete", "root", idx.root)
 	return nil
 }
@@ -171,7 +183,11 @@ type Backend interface {
 	MigrateSchema(ctx context.Context, erase bool) (bool, error)
 
 	// Set description for storage root in the index
-	SetStorageRootDescription(ctx context.Context, desc string) error
+	SetStorageRoot(ctx context.Context, root string, desc string, spec ocfl.Spec) error
+	GetStoreSummary(ctx context.Context) (StoreSummary, error)
+
+	// Set StorageRoot' IndexedAt timestamp to 'now'
+	SetStorageRootIndexed(ctx context.Context) error
 
 	// IndexObject adds an object to the index. It requires the object root path
 	// relative to the indexes storage root, pointer to the object's root
@@ -191,6 +207,14 @@ type Backend interface {
 	//DeleteObject(ctx context.Context, objectID string) error
 	//GarbageCollect(ctx context.Context) error
 	//HealthChecks(ctx) (Stats, error)
+}
+
+type StoreSummary struct {
+	RootPath    string
+	Description string
+	Spec        ocfl.Spec
+	NumObjects  int
+	IndexedAt   time.Time
 }
 
 type ObjectListOrder int

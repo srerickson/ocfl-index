@@ -9,13 +9,17 @@ create table ocfl_index_schema (
 INSERT INTO ocfl_index_schema (major, minor) values (0,2);
 
 -- only support one storage root per index.
--- this table is just for holding the description
 create table ocfl_index_storage_root (
   id INTEGER PRIMARY KEY,
-  description TEXT NOT NULL
+  root_path TEXT NOT NULL,
+  description TEXT NOT NULL, -- storage root description
+  spec TEXT NOT NULL, -- storage root's OCFL spec version
+  indexed_at DATETIME, -- date of index
+  --validated_at DATETIME NOT NULL DEFAULT "", -- date of last validation
+  UNIQUE(root_path)
 );
--- only one row
-INSERT INTO ocfl_index_storage_root (id, description) VALUES (1, "");
+-- only one storage root per database for now
+INSERT INTO ocfl_index_storage_root (id, root_path, description, spec) VALUES (1, "", "", "");
 
 
 -- OCFL Objects

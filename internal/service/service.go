@@ -20,6 +20,14 @@ type Service struct {
 // Service implements the service generated with connect-go
 var _ (ocflv1connect.RootIndexServiceHandler) = (*Service)(nil)
 
+func (srv Service) Summary(ctx context.Context, _ *connect.Request[api.SummaryRequest]) (*connect.Response[api.SummaryResponse], error) {
+	summ, err := srv.GetStoreSummary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return asSummaryResponse(summ), nil
+}
+
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
 	newRQ, err := asObjectListQuery(rq)
 	if err != nil {
@@ -38,6 +46,16 @@ func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObj
 		return nil, err
 	}
 	return asGetObjectResponse(obj), nil
+}
+
+func asSummaryResponse(summ index.StoreSummary) *connect.Response[api.SummaryResponse] {
+	msg := &api.SummaryResponse{
+		Description: summ.Description,
+		Spec:        summ.Spec.String(),
+		NumObjects:  int32(summ.NumObjects),
+		RootPath:    summ.RootPath,
+	}
+	return connect.NewResponse(msg)
 }
 
 func asObjectListQuery(rq *connect.Request[api.ListObjectsRequest]) (index.ObjectListQuery, error) {
