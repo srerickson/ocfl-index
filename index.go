@@ -179,7 +179,7 @@ type Backend interface {
 	IndexObject(ctx context.Context, objPath string, rootInv *ocflv1.Inventory) error
 
 	// object/version/path API
-	ListObjects(ctx context.Context) ([]ObjectListItem, error)
+	ListObjects(ctx context.Context, rq ObjectListQuery) (ObjectList, error)
 	GetObject(ctx context.Context, objectID string) (*ObjectDetails, error)
 	GetContent(ctx context.Context, objectID string, vnum ocfl.VNum, name string) (*ContentResult, error)
 
@@ -193,6 +193,26 @@ type Backend interface {
 	//HealthChecks(ctx) (Stats, error)
 }
 
+type ObjectListOrder int
+
+const (
+	ObjectOrderDefault = ObjectListOrder(iota)
+	ObjectOrder_ASC_ID
+	ObjectOrder_DESC_ID
+	ObjectOrder_ASC_V1_CREATED
+	ObjectOrder_DESC_V1_CREATED
+	ObjectOrder_ASC_HEAD_CREATED
+	ObjectOrder_DESC_HEAD_CREATED
+)
+
+type ObjectListQuery struct {
+	Order  ObjectListOrder
+	Limit  int
+	Cursor any // string, time.Time, or nil
+}
+
+type ObjectList []ObjectListItem
+
 // ObjectListItem is short-form object details for object lists
 type ObjectListItem struct {
 	ID          string    // OCFL Object ID
@@ -204,23 +224,22 @@ type ObjectListItem struct {
 
 // ObjectDetails is detailed information about an object, as stored in the index.
 type ObjectDetails struct {
-	// OCFL Object ID
-	ID              string
-	Spec            ocfl.Spec // Object's OCFL Spec version
-	Head            ocfl.VNum
-	DigestAlgorithm string
-	InventoryDigest string
-	RootPath        string
-	Versions        []*VersionMeta
+	ID              string    // OCFL object ID
+	Spec            ocfl.Spec // object's OCFL Spec version
+	Head            ocfl.VNum // object's most recent versio
+	DigestAlgorithm string    // from inventory
+	InventoryDigest string    // from inventory sidecar
+	RootPath        string    // object path relative to storage root
+	Versions        []*VersionListItem
 }
 
-// VersionMeta represents indexed OCFL object version metadata
-type VersionMeta struct {
-	ID      string       `json:"object_id"`      // Object ID
-	Version ocfl.VNum    `json:"version"`        // Version number
-	Message string       `json:"message"`        // Version message
-	Created time.Time    `json:"created"`        // Version create datetime
-	User    *ocflv1.User `json:"user,omitempty"` // Version user information
+// VersionListItem represents indexed OCFL object version metadata
+type VersionListItem struct {
+	ID      string       // Object ID
+	Version ocfl.VNum    // Version number
+	Message string       // Version message
+	Created time.Time    // Version create datetime
+	User    *ocflv1.User // Version user information
 }
 
 // ContentResult represent content at a logical path in the object

@@ -1,7 +1,7 @@
 version: v1
 name: buf.build/srerickson/ocfl
 deps:
-  - buf.build/googleapis/googleapis
+  - buf.build/gogo/protobuf
 breaking:
   use:
     - FILE

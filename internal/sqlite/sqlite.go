@@ -110,7 +110,7 @@ func (db *Backend) IndexObject(ctx context.Context, root string, inv *ocflv1.Inv
 	return tx.Commit()
 }
 
-func (idx *Backend) ListObjects(ctx context.Context) ([]index.ObjectListItem, error) {
+func (idx *Backend) ListObjects(ctx context.Context, rq index.ObjectListQuery) (index.ObjectList, error) {
 	qry := sqlc.New(idx)
 	rows, err := qry.ListObjects(ctx, sqlc.ListObjectsParams{
 		ID:    0,
@@ -143,9 +143,9 @@ func (idx *Backend) GetObject(ctx context.Context, objID string) (*index.ObjectD
 	if err != nil {
 		return nil, err
 	}
-	vers := make([]*index.VersionMeta, len(rows))
+	vers := make([]*index.VersionListItem, len(rows))
 	for i := 0; i < len(rows); i++ {
-		ver := &index.VersionMeta{
+		ver := &index.VersionListItem{
 			ID:      objID,
 			Message: rows[i].Message,
 			Created: rows[i].Created,

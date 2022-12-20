@@ -2,6 +2,6 @@
 version: v1
 deps:
   - remote: buf.build
-    owner: googleapis
-    repository: googleapis
-    commit: 75b4300737fb4efca0831636be94e517
+    owner: gogo
+    repository: protobuf
+    commit: 5461a3dfa9d941da82028ab185dc2a0e

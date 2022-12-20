@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ocfl.v1;
 
-import "google/type/datetime.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/srerickson/ocfl-index/gen/ocfl/v1;ocflv1";
 
@@ -12,8 +12,8 @@ message ListObjectsRequest {
   string cursor = 3;
   enum Order {
     ORDER_UNSPECIFIED = 0;
-    ORDER_ASC_ALPHA = 1;
-    ORDER_DESC_APHA = 2;
+    ORDER_ASC_ID = 1;
+    ORDER_DESC_ID = 2;
     ORDER_ASC_V1_CREATED = 3;
     ORDER_DESC_V1_CREATED = 4;
     ORDER_ASC_HEAD_CREATED = 5;
@@ -25,8 +25,8 @@ message ListObjectsResponse {
   message Object {
     string object_id = 1;
     string head = 2;
-    google.type.DateTime v1_created = 3;
-    google.type.DateTime head_created = 4;
+    google.protobuf.Timestamp v1_created = 3;
+    google.protobuf.Timestamp head_created = 4;
   }
   repeated Object objects = 1;
 }
@@ -43,11 +43,11 @@ message GetObjectResponse {
     }
     string num = 1;
     string message = 2;
-    google.type.DateTime  created = 3;
+    google.protobuf.Timestamp created = 3;
     optional User user = 4;
   }
   string object_id = 1;
-  string spec=2;
+  string spec = 2;
   string root_path = 3;
   string digest_algorithm = 4;
   repeated Version versions = 5;

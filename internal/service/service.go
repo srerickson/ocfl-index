@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/bufbuild/connect-go"
-	"google.golang.org/genproto/googleapis/type/datetime"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	index "github.com/srerickson/ocfl-index"
 	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
@@ -19,10 +21,65 @@ type Service struct {
 var _ (ocflv1connect.RootIndexServiceHandler) = (*Service)(nil)
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
-	objects, err := srv.Index.ListObjects(ctx)
+	newRQ, err := asObjectListQuery(rq)
 	if err != nil {
 		return nil, err
 	}
+	objects, err := srv.Index.ListObjects(ctx, newRQ)
+	if err != nil {
+		return nil, err
+	}
+	return asObjectListResponse(objects), nil
+}
+
+func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObjectRequest]) (*connect.Response[api.GetObjectResponse], error) {
+	obj, err := srv.Index.GetObject(ctx, rq.Msg.ObjectId)
+	if err != nil {
+		return nil, err
+	}
+	return asGetObjectResponse(obj), nil
+}
+
+func asObjectListQuery(rq *connect.Request[api.ListObjectsRequest]) (index.ObjectListQuery, error) {
+	var newRQ index.ObjectListQuery
+	newRQ.Limit = int(rq.Msg.Limit)
+	newRQ.Order = index.ObjectListOrder(rq.Msg.Order)
+	switch rq.Msg.Order {
+	case api.ListObjectsRequest_ORDER_ASC_HEAD_CREATED:
+		fallthrough
+	case api.ListObjectsRequest_ORDER_DESC_HEAD_CREATED:
+		fallthrough
+	case api.ListObjectsRequest_ORDER_ASC_V1_CREATED:
+		fallthrough
+	case api.ListObjectsRequest_ORDER_DESC_V1_CREATED:
+		t, err := time.Parse(time.RFC3339, rq.Msg.Cursor)
+		if err != nil {
+			return newRQ, fmt.Errorf("invalid cursor: %w", err)
+		}
+		newRQ.Cursor = t
+	case api.ListObjectsRequest_ORDER_ASC_ID:
+		fallthrough
+	case api.ListObjectsRequest_ORDER_DESC_ID:
+		newRQ.Cursor = rq.Msg.Cursor
+	}
+	return newRQ, nil
+}
+
+// func toObjectListRequest(rq index.ObjectListRequest) *connect.Request[api.ListObjectsRequest] {
+// 	newRQ := &api.ListObjectsRequest{
+// 		Limit: int32(rq.Limit),
+// 		Order: api.ListObjectsRequest_Order(rq.Limit),
+// 	}
+// 	switch c := rq.Cursor.(type) {
+// 	case time.Time:
+// 		newRQ.Cursor = c.Format(time.RFC3339)
+// 	case string:
+// 		newRQ.Cursor = c
+// 	}
+// 	return connect.NewRequest(newRQ)
+// }
+
+func asObjectListResponse(objects index.ObjectList) *connect.Response[api.ListObjectsResponse] {
 	msg := &api.ListObjectsResponse{
 		Objects: make([]*api.ListObjectsResponse_Object, len(objects)),
 	}
@@ -31,13 +88,10 @@ func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.List
 			ObjectId: meta.ID,
 			Head:     meta.Head.String()}
 	}
-	return connect.NewResponse(msg), nil
+	return connect.NewResponse(msg)
 }
-func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObjectRequest]) (*connect.Response[api.GetObjectResponse], error) {
-	obj, err := srv.Index.GetObject(ctx, rq.Msg.ObjectId)
-	if err != nil {
-		return nil, err
-	}
+
+func asGetObjectResponse(obj *index.ObjectDetails) *connect.Response[api.GetObjectResponse] {
 	msg := &api.GetObjectResponse{
 		ObjectId: obj.ID,
 		RootPath: obj.RootPath,
@@ -48,14 +102,7 @@ func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObj
 		msg.Versions[i] = &api.GetObjectResponse_Version{
 			Num:     v.Version.String(),
 			Message: v.Message,
-			Created: &datetime.DateTime{
-				Year:    int32(v.Created.Year()),
-				Month:   int32(v.Created.Month()),
-				Day:     int32(v.Created.Day()),
-				Hours:   int32(v.Created.Hour()),
-				Minutes: int32(v.Created.Minute()),
-				Seconds: int32(v.Created.Second()),
-			},
+			Created: timestamppb.New(v.Created),
 		}
 		if v.User != nil {
 			msg.Versions[i].User = &api.GetObjectResponse_Version_User{
@@ -64,5 +111,5 @@ func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObj
 			}
 		}
 	}
-	return connect.NewResponse(msg), nil
+	return connect.NewResponse(msg)
 }
