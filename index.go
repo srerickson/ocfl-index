@@ -180,7 +180,7 @@ func indexStore(ctx context.Context, idx Backend, store *ocflv1.Store, paths map
 // storing the indexing.
 type Backend interface {
 	GetSchemaVersion(ctx context.Context) (int, int, error)
-	MigrateSchema(ctx context.Context, erase bool) (bool, error)
+	InitSchema(ctx context.Context, erase bool) (bool, error)
 
 	// Set description for storage root in the index
 	SetStorageRoot(ctx context.Context, root string, desc string, spec ocfl.Spec) error

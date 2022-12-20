@@ -40,6 +40,9 @@ type Backend struct {
 	sql.DB
 }
 
+// New returns a new Backend using connection string conf, which is passed
+// directory to sql.Open. New does not confirm the database schema
+// or
 func New(conf string) (*Backend, error) {
 	db, err := sql.Open("sqlite", conf)
 	if err != nil {
@@ -53,7 +56,7 @@ func (db *Backend) GetStoreSummary(ctx context.Context) (index.StoreSummary, err
 	qry := sqlc.New(&db.DB)
 	row, err := qry.GetStorageRoot(ctx)
 	if err != nil {
-		return index.StoreSummary{}, fmt.Errorf("GetStorgaeRoot: %w", err)
+		return index.StoreSummary{}, err
 	}
 	count, err := qry.CountObjects(ctx)
 	if err != nil {
@@ -295,9 +298,8 @@ func (db *Backend) GetSchemaVersion(ctx context.Context) (int, int, error) {
 	return int(ver.Major), int(ver.Minor), nil
 }
 
-// CreateTable creates all tables index tables. If erase is true any existing
-// "ocfl_index_" tables are erase.
-func (db *Backend) MigrateSchema(ctx context.Context, erase bool) (bool, error) {
+// InitSchema checks the schema of the sqlite database and initializes it.
+func (db *Backend) InitSchema(ctx context.Context, erase bool) (bool, error) {
 	tables, err := db.existingTables(ctx)
 	if err != nil {
 		return false, err

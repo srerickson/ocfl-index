@@ -23,7 +23,7 @@ func TestCreateTables(t *testing.T) {
 	}
 	defer idx.Close()
 	ctx := context.Background()
-	_, err = idx.MigrateSchema(ctx, false)
+	_, err = idx.InitSchema(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestCreateTables(t *testing.T) {
 		t.Errorf("expected schema version 0.1, got %d.%d", major, minor)
 	}
 	// create and erase
-	_, err = idx.MigrateSchema(ctx, true)
+	_, err = idx.InitSchema(ctx, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestIndexInventory(t *testing.T) {
 	}
 	defer idx.Close()
 	ctx := context.Background()
-	_, err = idx.MigrateSchema(ctx, false)
+	_, err = idx.InitSchema(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
