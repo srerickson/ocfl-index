@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
-	"log"
 	"os"
 
 	"gocloud.dev/blob"
@@ -16,8 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl"
-	index "github.com/srerickson/ocfl-index"
-	"github.com/srerickson/ocfl-index/internal/sqlite"
 	"github.com/srerickson/ocfl/backend/cloud"
 )
 
@@ -72,26 +68,12 @@ func init() {
 	)
 }
 
-func prepareIndex(ctx context.Context, db *sql.DB) (index.Backend, error) {
-	idx := &sqlite.Backend{DB: *db}
-	created, err := idx.MigrateSchema(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	if created {
-		log.Println("created new index tables")
-	}
-	return idx, err
-}
-
 func setupFS(ctx context.Context, c *fsConfig) error {
 	switch c.Driver {
 	case "fs":
-		log.Printf("using FS dir=%s\n", c.Path)
 		c.fs = ocfl.NewFS(os.DirFS(c.Path))
 		c.rootDir = "."
 	case "s3":
-		log.Printf("using S3 bucket=%s path=%s\n", c.Bucket, c.Path)
 		sess, err := session.NewSession()
 		if err != nil {
 			return err
@@ -109,7 +91,6 @@ func setupFS(ctx context.Context, c *fsConfig) error {
 		c.closer = bucket
 		c.rootDir = c.Path
 	case "azure":
-		log.Printf("using Azure container=%s path=%s\n", c.Bucket, c.Path)
 		bucket, err := blob.OpenBucket(ctx, "azblob://"+c.Bucket)
 		if err != nil {
 			return err

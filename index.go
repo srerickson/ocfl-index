@@ -24,15 +24,11 @@ var ErrMissingValue = errors.New("missing value")
 
 // Index provides indexing for an OCFL Storage Root
 type Index struct {
-	// set by NewIndex()
 	Backend
-	fsys        ocfl.FS
-	root        string
+	fs          ocfl.FS
+	root        string // storage root directory
 	concurrency int
 	log         logr.Logger
-
-	// set by Init()
-	store *ocflv1.Store
 }
 
 // Option is used by NewIndex to configure the Index
@@ -55,7 +51,7 @@ func WithLogger(l logr.Logger) Option {
 func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
 	idx := &Index{
 		Backend:     db,
-		fsys:        fsys,
+		fs:          fsys,
 		root:        root,
 		concurrency: runtime.GOMAXPROCS(-1),
 		log:         logr.Discard(),
@@ -66,30 +62,18 @@ func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
 	return idx
 }
 
-func (idx *Index) Init(ctx context.Context) error {
-	store, err := ocflv1.GetStore(ctx, idx.fsys, idx.root)
-	if err != nil {
-		return err
-	}
-	summ, err := idx.GetStoreSummary(ctx)
-	if err != nil {
-		return err
-	}
-	if summ.RootPath != idx.root {
-		// Question: What is the best way to handle existing values in
-		// index file that don't match?
-		if err := idx.SetStorageRoot(ctx, idx.root, store.Description(), store.Spec()); err != nil {
-			return err
-		}
-	}
-	idx.store = store
-	return nil
-}
-
 // DoIndex() indexes the storage root associated with the index.
 func (idx Index) DoIndex(ctx context.Context) error {
-	idx.log.Info("starting object scan", "root", idx.root, "concurrenct", idx.concurrency)
-	objPaths, err := idx.store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
+	store, err := ocflv1.GetStore(ctx, idx.fs, idx.root)
+	if err != nil {
+		return err
+	}
+	// store the storage root's info in the database
+	if err := idx.SetStoreInfo(ctx, idx.root, store.Description(), store.Spec()); err != nil {
+		return err
+	}
+	idx.log.Info("starting object scan", "root", idx.root, "concurrency", idx.concurrency)
+	objPaths, err := store.ScanObjects(ctx, &ocflv1.ScanObjectsOpts{
 		Strict:      false,
 		Concurrency: idx.concurrency,
 	})
@@ -98,16 +82,16 @@ func (idx Index) DoIndex(ctx context.Context) error {
 	}
 	total := len(objPaths)
 	idx.log.Info("indexing objects", "root", idx.root, "object_count", total)
-	if err := indexStore(ctx, idx.Backend, idx.store, objPaths, idx.concurrency); err != nil {
+	if err := indexStore(ctx, idx.Backend, store, objPaths, idx.concurrency); err != nil {
 		return fmt.Errorf("indexing storage root: %w", err)
 	}
-	idx.SetStorageRootIndexed(ctx)
+	idx.SetStoreIndexedAt(ctx)
 	idx.log.Info("indexing complete", "root", idx.root)
 	return nil
 }
 
 func (idx Index) OpenFile(ctx context.Context, name string) (fs.File, error) {
-	return idx.fsys.OpenFile(ctx, path.Join(idx.root, name))
+	return idx.fs.OpenFile(ctx, path.Join(idx.root, name))
 }
 
 // concurrent indexing for objects paths in store
@@ -179,15 +163,18 @@ func indexStore(ctx context.Context, idx Backend, store *ocflv1.Store, paths map
 // Backend is an interface that can be implemented for different databases for
 // storing the indexing.
 type Backend interface {
-	GetSchemaVersion(ctx context.Context) (int, int, error)
-	InitSchema(ctx context.Context, erase bool) (bool, error)
+	// Intitalize table definitions for the the backend
+	InitSchema(ctx context.Context) (bool, error)
 
-	// Set description for storage root in the index
-	SetStorageRoot(ctx context.Context, root string, desc string, spec ocfl.Spec) error
+	// Return backend's schema version
+	GetSchemaVersion(ctx context.Context) (int, int, error)
+
+	// Get/Set Storage Root details in the index
+	SetStoreInfo(ctx context.Context, root string, desc string, spec ocfl.Spec) error
 	GetStoreSummary(ctx context.Context) (StoreSummary, error)
 
 	// Set StorageRoot' IndexedAt timestamp to 'now'
-	SetStorageRootIndexed(ctx context.Context) error
+	SetStoreIndexedAt(ctx context.Context) error
 
 	// IndexObject adds an object to the index. It requires the object root path
 	// relative to the indexes storage root, pointer to the object's root

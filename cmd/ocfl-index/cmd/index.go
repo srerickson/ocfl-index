@@ -5,13 +5,13 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"log"
 
 	"github.com/go-logr/stdr"
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl"
 	index "github.com/srerickson/ocfl-index"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 	_ "gocloud.dev/blob/azureblob"
 )
 
@@ -50,19 +50,17 @@ func init() {
 }
 
 func DoIndex(ctx context.Context, fsys ocfl.FS, root string, dbName string, conc int) error {
-	db, err := sql.Open("sqlite", "file:"+dbName)
+	idx, err := sqlite.Open(dbName)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	idx, err := prepareIndex(ctx, db)
-	if err != nil {
+	defer idx.Close()
+	if _, err := idx.InitSchema(ctx); err != nil {
 		return err
 	}
 	log := stdr.New(nil)
-	srv := index.NewIndex(idx, fsys, root, index.WithConcurrency(conc), index.WithLogger(log))
-	if err := srv.Init(ctx); err != nil {
-		return err
-	}
-	return srv.DoIndex(ctx)
+	return index.NewIndex(
+		idx, fsFlags.fs, fsFlags.rootDir,
+		index.WithConcurrency(conc),
+		index.WithLogger(log)).DoIndex(ctx)
 }

@@ -40,10 +40,10 @@ type Backend struct {
 	sql.DB
 }
 
-// New returns a new Backend using connection string conf, which is passed
-// directory to sql.Open. New does not confirm the database schema
+// Open returns a new Backend using connection string conf, which is passed
+// directory to sql.Open. Open does not confirm the database schema
 // or
-func New(conf string) (*Backend, error) {
+func Open(conf string) (*Backend, error) {
 	db, err := sql.Open("sqlite", conf)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (db *Backend) GetStoreSummary(ctx context.Context) (index.StoreSummary, err
 	return summ, nil
 }
 
-func (db *Backend) SetStorageRoot(ctx context.Context, root string, desc string, spec ocfl.Spec) error {
+func (db *Backend) SetStoreInfo(ctx context.Context, root string, desc string, spec ocfl.Spec) error {
 	return sqlc.New(&db.DB).SetStorageRoot(ctx, sqlc.SetStorageRootParams{
 		Description: desc,
 		RootPath:    root,
@@ -87,7 +87,7 @@ func (db *Backend) SetStorageRoot(ctx context.Context, root string, desc string,
 	})
 }
 
-func (db *Backend) SetStorageRootIndexed(ctx context.Context) error {
+func (db *Backend) SetStoreIndexedAt(ctx context.Context) error {
 	return sqlc.New(&db.DB).SetStorageRootIndexed(ctx)
 }
 
@@ -299,7 +299,7 @@ func (db *Backend) GetSchemaVersion(ctx context.Context) (int, int, error) {
 }
 
 // InitSchema checks the schema of the sqlite database and initializes it.
-func (db *Backend) InitSchema(ctx context.Context, erase bool) (bool, error) {
+func (db *Backend) InitSchema(ctx context.Context) (bool, error) {
 	tables, err := db.existingTables(ctx)
 	if err != nil {
 		return false, err
@@ -314,17 +314,9 @@ func (db *Backend) InitSchema(ctx context.Context, erase bool) (bool, error) {
 		if schema == schemaVer {
 			return false, nil
 		}
-		if !erase {
-			return false, fmt.Errorf("database uses schema v%d.%d, this version of ocfl-index requires v%d.%d ",
-				schema.Major, schema.Minor, schemaVer.Major, schemaVer.Minor,
-			)
-		}
-		for _, t := range tables {
-			_, err := db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE %s;`, t))
-			if err != nil {
-				return false, err
-			}
-		}
+		return false, fmt.Errorf("database uses schema v%d.%d, this version of ocfl-index requires v%d.%d ",
+			schema.Major, schema.Minor, schemaVer.Major, schemaVer.Minor,
+		)
 	}
 	_, err = db.ExecContext(ctx, querySchema)
 	if err != nil {

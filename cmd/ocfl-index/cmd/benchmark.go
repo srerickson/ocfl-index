@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"math/rand"
@@ -16,6 +15,7 @@ import (
 	"github.com/muesli/coral"
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/ocfltest"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -56,13 +56,12 @@ func init() {
 }
 
 func doBenchmark(ctx context.Context, dbName string, numinv int, size int) error {
-	db, err := sql.Open("sqlite", "file:"+dbName)
+	idx, err := sqlite.Open(dbName)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	idx, err := prepareIndex(ctx, db)
-	if err != nil {
+	defer idx.Close()
+	if _, err := idx.InitSchema(ctx); err != nil {
 		return err
 	}
 	fmt.Printf("indexing %d generated inventories (1-4 versions, %d files/version)\n", numinv, size)

@@ -17,13 +17,13 @@ import (
 )
 
 func TestCreateTables(t *testing.T) {
-	idx, err := sqlite.New("file:tmp.sqlite?mode=memory")
+	idx, err := sqlite.Open("file:tmp.sqlite?mode=memory")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer idx.Close()
 	ctx := context.Background()
-	_, err = idx.InitSchema(ctx, false)
+	_, err = idx.InitSchema(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestCreateTables(t *testing.T) {
 		t.Errorf("expected schema version 0.1, got %d.%d", major, minor)
 	}
 	// create and erase
-	_, err = idx.InitSchema(ctx, true)
+	_, err = idx.InitSchema(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,13 +46,13 @@ func TestCreateTables(t *testing.T) {
 
 func TestIndexInventory(t *testing.T) {
 	const numInvs = 50
-	idx, err := sqlite.New("file:test_index_inventory.sqlite?mode=memory")
+	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer idx.Close()
 	ctx := context.Background()
-	_, err = idx.InitSchema(ctx, false)
+	_, err = idx.InitSchema(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,5 +122,4 @@ func TestIndexInventory(t *testing.T) {
 			})
 		}
 	}
-
 }
