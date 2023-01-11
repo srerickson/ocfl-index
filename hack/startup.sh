@@ -25,4 +25,4 @@ export OCFL_INDEX_SQLITE="public-data.sqlite"
 # export AWS_S3_ENDPOINT
 
 # start server and index filesizes
-$($app serve --filesizes)
+$($app server --filesizes)
