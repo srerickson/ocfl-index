@@ -4,12 +4,15 @@ go 1.18
 
 require (
 	github.com/aws/aws-sdk-go v1.44.66
+	github.com/bufbuild/connect-go v1.4.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-logr/logr v1.2.3
-	github.com/go-logr/stdr v1.2.2
-	github.com/muesli/coral v1.0.0
-	github.com/srerickson/ocfl v0.0.10
+	github.com/iand/logfmtr v0.2.1
+	github.com/spf13/cobra v1.6.1
+	github.com/srerickson/ocfl v0.0.12
 	gocloud.dev v0.26.0
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
+	google.golang.org/protobuf v1.28.1
 	modernc.org/sqlite v1.18.0
 )
 
@@ -46,7 +49,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.2.0 // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
@@ -56,7 +59,6 @@ require (
 	go.opencensus.io v0.23.0 // indirect
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a // indirect
 	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8 // indirect
 	golang.org/x/text v0.3.7 // indirect
@@ -66,7 +68,6 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220401170504-314d38edb7de // indirect
 	google.golang.org/grpc v1.45.0 // indirect
-	google.golang.org/protobuf v1.28.0 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.36.1 // indirect
 	modernc.org/ccgo/v3 v3.16.8 // indirect

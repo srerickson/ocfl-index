@@ -69,16 +69,13 @@ func (node Node[T]) DirEntries() []DirEntry {
 // has no child with the given name, or if the node is not a directory node, nil
 // is returned.
 func (node Node[T]) Child(name string) *Node[T] {
-	if node.children == nil {
-		return nil
-	}
 	return node.children[name]
 }
 
 // AllPaths returns slice of all path names that are descendants of node
-func (node Node[T]) AllPaths() []string {
+func (node *Node[T]) AllPaths() []string {
 	var names []string
-	fn := func(name string, isdir bool, val T) error {
+	fn := func(name string, node *Node[T]) error {
 		if name != "." {
 			names = append(names, name)
 		}
@@ -137,6 +134,10 @@ func (node *Node[T]) Set(p string, child *Node[T]) error {
 	}
 	parent.children[baseName] = child
 	return nil
+}
+
+func (node *Node[T]) SetFile(p string, val T) error {
+	return node.Set(p, NewFile(val))
 }
 
 // MkdirALL creates a directory node named p, along with any necessary parents.
@@ -217,15 +218,15 @@ func (node *Node[T]) Rename(from, to string) error {
 	return nil
 }
 
-func (node Node[T]) Copy() *Node[T] {
+func (node *Node[T]) Copy() *Node[T] {
 	cp := &Node[T]{}
-	walkFn := func(name string, isdir bool, val T) error {
+	walkFn := func(name string, n *Node[T]) error {
 		var newNode *Node[T]
-		if isdir {
+		if n.IsDir() {
 			newNode = NewDir[T]()
-			newNode.Val = val
+			newNode.Val = n.Val
 		} else {
-			newNode = NewFile(val)
+			newNode = NewFile(n.Val)
 		}
 		return cp.Set(name, newNode)
 	}
@@ -274,16 +275,16 @@ func (node *Node[T]) Len() int {
 }
 
 // Walk runs fn on every node in the tree
-func Walk[T any](node Node[T], fn WalkFunc[T]) error {
+func Walk[T any](node *Node[T], fn WalkFunc[T]) error {
 	return walk(node, ".", fn)
 }
 
-type WalkFunc[T any] func(name string, isdir bool, val T) error
+type WalkFunc[T any] func(name string, node *Node[T]) error
 
 var ErrSkipDir error
 
-func walk[T any](node Node[T], p string, fn WalkFunc[T]) error {
-	if err := fn(p, node.IsDir(), node.Val); err != nil {
+func walk[T any](node *Node[T], p string, fn WalkFunc[T]) error {
+	if err := fn(p, node); err != nil {
 		if err == ErrSkipDir {
 			return nil
 		}
@@ -292,7 +293,7 @@ func walk[T any](node Node[T], p string, fn WalkFunc[T]) error {
 	for _, de := range node.DirEntries() {
 		child := node.children[de.name]
 		chPath := path.Join(p, de.name)
-		if err := walk(*child, chPath, fn); err != nil {
+		if err := walk(child, chPath, fn); err != nil {
 			return err
 		}
 	}
@@ -314,15 +315,15 @@ func (a DirEntries) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a DirEntries) Less(i, j int) bool { return a[i].Name() < a[j].Name() }
 
 // Map maps values of type T1 in root to values of type T2 in a new root node.
-func Map[T1 any, T2 any](root Node[T1], fn func(T1) (T2, error)) (*Node[T2], error) {
+func Map[T1 any, T2 any](root *Node[T1], fn func(T1) (T2, error)) (*Node[T2], error) {
 	newRoot := &Node[T2]{}
-	err := Walk(root, func(name string, isdir bool, val T1) error {
-		newVal, err := fn(val)
+	err := Walk(root, func(name string, n *Node[T1]) error {
+		newVal, err := fn(n.Val)
 		if err != nil {
 			return err
 		}
 		newNode := &Node[T2]{}
-		if isdir {
+		if n.IsDir() {
 			newNode.children = make(map[string]*Node[T2])
 		}
 		newNode.Val = newVal

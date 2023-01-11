@@ -1,22 +1,21 @@
 /*
 Copyright © 2022
-
 */
 package cmd
 
 import (
 	"fmt"
 
-	"github.com/muesli/coral"
-	index "github.com/srerickson/ocfl-index"
+	"github.com/spf13/cobra"
+	"github.com/srerickson/ocfl-index/internal/index"
 )
 
 // benchmarkCmd represents the benchmark command
-var versionCmd = &coral.Command{
+var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "print version information",
 	Long:  ``,
-	Run: func(cmd *coral.Command, args []string) {
+	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(`ocfl-index`, index.Version)
 	},
 }

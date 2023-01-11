@@ -1,86 +1,33 @@
 # ocfl-index
 
-`ocfl-index` is a command line tool for indexing [OCFL Storage Roots](https://ocfl.io). It supports access to the [logical](https://ocfl.io/1.0/spec/#dfn-logical-state) directory structure of OCFL Objects. The index is stored as a sqlite3 database (see `sqlite/schema.sql` for details). This is an experimental project and the command line interface should not be considered stable.
+`ocfl-index` provides a lightweight http/gRPC-based API for indexing and accessing the contents of [OCFL-based repositories](https://ocfl.io). It can serve content from OCFL storage roots on the local file system or in the cloud (S3, Azure, and GCS). The index is currently stored in an sqlite3 database, however additional database backends may be implemented in the future.
 
-```
-Usage:
-  ocfl-index [command]
+This project is currently in a *pre-release* development phase. It should not be used in production settings and breaking changes to the API are likely.
 
-Available Commands:
-  benchmark   benchmark indexing with generated inventories
-  help        Help about any command
-  index       index an OCFL storage root
-  query       query the index
+This repository includes a command line client, `ox`, as well as protocol buffer schemata and service definitions that can be used to auto-generate client libraries for a variety of programming languages.
 
-Flags:
-  -f, --file string   index filename/connection string (default "index.sqlite")
-  -h, --help          help for ocfl-index
-
-Use "ocfl-index [command] --help" for more information about a command.
-```
-
-## Indexing
-
-OCFL storage roots can be read from the local filesystem, S3 buckets, or Azure Blob containers.
+## Simple Usage
 
 ```sh
-# index a storage root locally
-ocfl-index index --path ~/my/root
-
-# index a storage root in an S3 bucket
-ocfl-index index --driver s3 --bucket my-bucket
-
-# index a storage root in an S3 bucket with a prefix
-ocfl-index index --driver s3 --bucket my-bucket --path my-prefix
-
-# index a storage root in an Azure Blob container
-ocfl-index index --driver azure --bucket my-container
-
+# start server from repo directory
+cmd/ocfl-index/ocfl-index server --driver fs --path testdata/simple-root
 ```
 
-## Querying
-To query, use the `query [object-id] [path]` subcommand. The path should be a *relative* path (using `/` as a separator) referencing a file or directory in the object. Use the `-v` flag to query the object at a particular version.
-
 ```sh
-# list all objects in the index
-ocfl-index query
-
-# list all versions in an object
-ocfl-index query object-id
-
-# list names of files and directories in the root of an object's most recent version
-ocfl-index query object-id "."
-
-# list names in the 'foo' directory of the object's first version
-ocfl-index query object-id "foo" -v v1
+# use curl to call api
+curl --header "Content-Type: application/json" http://localhost:8080/ocfl.v0.IndexService/GetSummary --data '{}'
 ```
 
-## Benchmarking
-
-The benchmark command can be used to get a sense of the performance characteristics of the index. It uses generated inventories with randomized states to build the index, measuring average times for index and query operations. It’s also useful for getting a sense of how the index file grows in size as you add inventories. 
+## Development
 
 ```sh
-# example with 1000 inventories
-ocfl-index benchmark --size 100 --num 1000
+# sqlc is used to generate code for sqlite queries
+go install github.com/kyleconroy/sqlc/cmd/sqlc@latest
 
-indexing 1000 generated inventories (1-4 versions, 100 files/version)
-indexed 1000/1000 (0.16 sec/op avg)
-queried 99 paths (0.0004 sec/op avg)
-benchmark complete in 164.5 sec
-```
 
-## S3 & Azure Config
 
-Use environment variables to configure access settings for S3 and Azure:
-
-```sh
-# S3 access settings
-export AWS_ACCESS_KEY_ID= ... 
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_REGION=...
-export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
-
-# Azure access settings
-export AZURE_STORAGE_ACCOUNT=...
-export AZURE_STORAGE_KEY=...
+# buf is used for grpc code generation
+go install github.com/bufbuild/buf/cmd/buf@latest
+go install github.com/bufbuild/connect-go/cmd/protoc-gen-connect-go@latest
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 ```

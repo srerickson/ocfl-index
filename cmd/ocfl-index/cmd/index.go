@@ -5,39 +5,42 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
-	"log"
+	"io"
 
-	"github.com/go-logr/stdr"
-	"github.com/muesli/coral"
+	"github.com/spf13/cobra"
 	"github.com/srerickson/ocfl"
-	index "github.com/srerickson/ocfl-index"
+	"github.com/srerickson/ocfl-index/internal/index"
+	"github.com/srerickson/ocfl-index/internal/sqlite"
 	_ "gocloud.dev/blob/azureblob"
 )
 
-type indexConfig struct {
+var indexFlags struct {
 	conc int
 }
 
-var indexFlags indexConfig
-
 // indexCmd represents the index command
-var indexCmd = &coral.Command{
+var indexCmd = &cobra.Command{
 	Use:   "index",
 	Short: "index an OCFL storage root",
 	Long: `The index command indexes all objects in a specified OCFL storage root. The
 index file will be created if it does not exist.`,
-	Run: func(cmd *coral.Command, args []string) {
-		log.Printf("ocfl-index %s", index.Version)
-		if err := setupFS(cmd.Context(), &fsFlags); err != nil {
-			log.Fatal(err)
-		}
-		if fsFlags.closer != nil {
-			defer fsFlags.closer.Close()
-		}
-		err := DoIndex(cmd.Context(), fsFlags.fs, fsFlags.rootDir, dbFlag, indexFlags.conc)
+	Run: func(cmd *cobra.Command, args []string) {
+		logger := NewLogger()
+		conf, err := NewConfig(logger)
 		if err != nil {
-			log.Fatal(err)
+			logger.Error(err, "configuration error")
+			return
+		}
+		fsys, rootDir, err := conf.FS(cmd.Context())
+		if err != nil {
+			logger.Error(err, "can't connect to backend")
+			return
+		}
+		if closer, ok := fsys.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if err := DoIndex(cmd.Context(), conf, fsys, rootDir); err != nil {
+			logger.Error(err, "index failed")
 		}
 	},
 }
@@ -49,20 +52,17 @@ func init() {
 	)
 }
 
-func DoIndex(ctx context.Context, fsys ocfl.FS, root string, dbName string, conc int) error {
-	db, err := sql.Open("sqlite", "file:"+dbName)
+func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) error {
+	idx, err := sqlite.Open(conf.DBFile)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	idx, err := prepareIndex(ctx, db)
-	if err != nil {
+	defer idx.Close()
+	if _, err := idx.InitSchema(ctx); err != nil {
 		return err
 	}
-	log := stdr.New(nil)
-	srv := index.NewService(idx, fsys, root, index.WithConcurrency(conc), index.WithLogger(log))
-	if err := srv.Init(ctx); err != nil {
-		return err
-	}
-	return srv.DoIndex(ctx)
+	return index.NewIndex(
+		idx, fsys, rootDir,
+		index.WithConcurrency(conf.Conc),
+		index.WithLogger(conf.Logger)).DoIndex(ctx, true)
 }

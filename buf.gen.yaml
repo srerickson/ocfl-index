@@ -1,0 +1,14 @@
+version: v1
+plugins:
+  - remote: buf.build/grpc/plugins/ruby
+    out: clients/ruby/lib/
+    opt: paths=source_relative
+  - remote: buf.build/protocolbuffers/plugins/ruby
+    out: clients/ruby/lib/
+    opt: paths=source_relative
+  - name: go
+    out: gen
+    opt: paths=source_relative
+  - name: connect-go
+    out: gen
+    opt: paths=source_relative
