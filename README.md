@@ -6,15 +6,35 @@ This project is currently in a *pre-release* development phase. It should not be
 
 This repository includes a command line client, `ox`, as well as protocol buffer schemata and service definitions that can be used to auto-generate client libraries for a variety of programming languages.
 
-## Simple Usage
+## Usage Example
 
 ```sh
-# start server from repo directory
-cmd/ocfl-index/ocfl-index server --driver fs --path testdata/simple-root
+# server config
+# S3 access settings
+export AWS_ACCESS_KEY_ID= ... 
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION=...
+export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
+
+# Azure is also supported
+# export AZURE_STORAGE_ACCOUNT=...
+# export AZURE_STORAGE_KEY=...
+
+# storage backend type: "fs", "s3", or "azure"
+export OCFL_INDEX_BACKEND="azure"  
+# cloud bucket (for s3, azure)
+export OCFL_INDEX_BUCKET="ocfl"
+# path relative to bucket/fs to OCFL storage root
+export OCFL_INDEX_STOREDIR="public-data"
+# path to index file
+export OCFL_INDEX_SQLITE="public-data.sqlite"
+
+# start the server
+ocfl-index server
 ```
 
 ```sh
-# use curl to call api
+# use curl to get index summary
 curl --header "Content-Type: application/json" http://localhost:8080/ocfl.v0.IndexService/GetSummary --data '{}'
 ```
 
@@ -23,8 +43,6 @@ curl --header "Content-Type: application/json" http://localhost:8080/ocfl.v0.Ind
 ```sh
 # sqlc is used to generate code for sqlite queries
 go install github.com/kyleconroy/sqlc/cmd/sqlc@latest
-
-
 
 # buf is used for grpc code generation
 go install github.com/bufbuild/buf/cmd/buf@latest
