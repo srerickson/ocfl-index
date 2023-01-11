@@ -8,9 +8,9 @@ Gem::Specification.new do |s|
     s.homepage    = "https://github.com/srerickson/ocfl-index"
     s.license     = "MIT"
 
-    s.files        = Dir["{lib}/**/*.rb", "bin/*", "LICENSE", "*.md"]
+    s.files        = Dir["{lib}/**/*.rb",]
     s.require_path = 'lib'
 
-    s.add_dependency "gruf", "~> 2.16"
+    s.add_dependency "grpc", "~> 1.50"
   end
   

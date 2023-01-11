@@ -2,7 +2,7 @@ require 'gruf'
 require 'ocfl-index'
 Gruf.configure do |c|
   c.default_client_host = 'ocfl-index.fly.dev:443'
-  c.use_ssl = true
+  c.default_channel_credentials = GRPC::Core::ChannelCredentials.new
 end
 
 begin
