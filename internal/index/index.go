@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"path"
 	"runtime"
 
 	"github.com/go-logr/logr"
@@ -22,8 +20,8 @@ var ErrMissingValue = errors.New("missing value")
 
 // Index provides indexing for an OCFL Storage Root
 type Index struct {
-	Backend
-	fs          ocfl.FS
+	Backend            // index database
+	ocfl.FS            // storage root fs
 	root        string // storage root directory
 	concurrency int
 	log         logr.Logger
@@ -34,7 +32,7 @@ type Index struct {
 func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
 	idx := &Index{
 		Backend:     db,
-		fs:          fsys,
+		FS:          fsys,
 		root:        root,
 		concurrency: runtime.GOMAXPROCS(-1),
 		log:         logr.Discard(),
@@ -62,7 +60,7 @@ func WithLogger(l logr.Logger) Option {
 
 // DoIndex() indexes the storage root associated with the index.
 func (idx Index) DoIndex(ctx context.Context, withSize bool) error {
-	store, err := ocflv1.GetStore(ctx, idx.fs, idx.root)
+	store, err := ocflv1.GetStore(ctx, idx.FS, idx.root)
 	if err != nil {
 		return err
 	}
@@ -85,10 +83,6 @@ func (idx Index) DoIndex(ctx context.Context, withSize bool) error {
 	idx.SetStoreIndexedAt(ctx)
 	idx.log.Info("indexing complete", "path", idx.root)
 	return nil
-}
-
-func (idx Index) OpenFile(ctx context.Context, name string) (fs.File, error) {
-	return idx.fs.OpenFile(ctx, path.Join(idx.root, name))
 }
 
 // TODO: return a boolean indicating if any changes were made
