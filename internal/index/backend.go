@@ -32,7 +32,8 @@ type Backend interface {
 	// object version state (i.e., the "logical state").
 	GetObjectState(ctx context.Context, objectID string, vnum ocfl.VNum, base string, recursive bool, limit int, cursor string) (*PathInfo, error)
 
-	// sum-based getters
+	// GetContentPath returns the path to a file with digest sum. The path is relative to
+	// the storage root's ocfl.FS.
 	GetContentPath(ctx context.Context, sum string) (string, error)
 }
 

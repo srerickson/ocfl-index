@@ -12,8 +12,6 @@ import (
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
-var fixtureRoot = filepath.Join("..", "..", "testdata")
-
 func TestNewIndexingObject(t *testing.T) {
 	ctx := context.Background()
 	fsys := ocfl.DirFS(filepath.Join(fixtureRoot, "simple-root"))
