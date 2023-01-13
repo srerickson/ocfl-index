@@ -56,12 +56,12 @@ func (ox *oxCmd) Cat(ctx context.Context, id string, v string, p string) error {
 		return fmt.Errorf("during content request: %w", err)
 	}
 	for conResp.Receive() {
-		if err := conResp.Err(); err != nil {
-			return fmt.Errorf("while receiving content: %w", err)
-		}
 		if _, err := os.Stdout.Write(conResp.Msg().Data); err != nil {
 			return fmt.Errorf("while printint content: %w", err)
 		}
+	}
+	if err := conResp.Err(); err != nil {
+		return fmt.Errorf("during content request: %w", err)
 	}
 	return nil
 }
