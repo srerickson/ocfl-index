@@ -21,13 +21,17 @@ export AWS_S3_ENDPOINT="http://localhost:9000" # for non-aws S3 endpoint
 # export AZURE_STORAGE_KEY=...
 
 # storage backend type: "fs", "s3", or "azure"
-export OCFL_INDEX_BACKEND="azure"  
+export OCFL_INDEX_BACKEND="s3"  
 # cloud bucket (for s3, azure)
 export OCFL_INDEX_BUCKET="ocfl"
 # path relative to bucket/fs to OCFL storage root
 export OCFL_INDEX_STOREDIR="public-data"
 # path to index file
 export OCFL_INDEX_SQLITE="public-data.sqlite"
+
+# Additional options (defaults shown)
+# export OCFL_INDEX_LISTEN="localhost:8080"
+# export AWS_S3_ENDPOINT = ""
 
 # start the server
 ocfl-index server

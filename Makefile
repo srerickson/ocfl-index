@@ -1,17 +1,8 @@
-.PHONY: startminio stopminio
-
-startminio:
-	##
-	## checking podman install
-	##
-	which podman
-	sudo podman pull quay.io/minio/minio:latest
-	sudo podman run --name ocfl-test -d --rm -p 9000:9000 -p 9001:9001 -v $(shell pwd)/testdata/minio:/data:z  minio/minio server /data --console-address ":9001"
-
-stopminio:
-	##
-	## stoping minio
-	##
-	which podman
-	sudo podman stop ocfl-test
-	
+.PHONY: install-devtools
+install-devtools:
+	# sqlc is used to generate code for sqlite queries
+	go install github.com/kyleconroy/sqlc/cmd/sqlc@v1.16.0
+	# buf is used for grpc code generation
+	go install github.com/bufbuild/buf/cmd/buf@v1.12.0
+	go install github.com/bufbuild/connect-go/cmd/protoc-gen-connect-go@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
