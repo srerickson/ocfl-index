@@ -1,0 +1,6 @@
+FROM cgr.dev/chainguard/static:latest
+ENV HOME /home/nonroot
+ENV OCFL_INDEX_SQLITE /home/nonroot/index.sqlite
+ENV OCFL_INDEX_STOREDIR /home/nonroot
+COPY ocfl-index /
+CMD ["/ocfl-index", "server"]

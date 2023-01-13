@@ -1,18 +1,12 @@
-FROM golang:1.19-alpine as builder
+FROM golang:1.19 as builder
 WORKDIR /app
 COPY . ./
 RUN go mod download
-RUN go build -o ./ocfl-index ./cmd/ocfl-index
+RUN CGO_ENABLED=0 go build -tags=netgo -o ./ocfl-index ./cmd/ocfl-index
 
-FROM alpine:latest
-RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
-RUN mkdir /data
-RUN mkdir /repo
-
-COPY --from=builder /app/ocfl-index /app/ocfl-index
-
-EXPOSE 8080
-ENV OCFL_INDEX_SQLITE="/data/index.sqlite"
-ENV OCFL_INDEX_STOREDIR="/repo"
-
-CMD ["/app/ocfl-index", "server", ":8080"]
+FROM cgr.dev/chainguard/static:latest
+COPY --from=builder /app/ocfl-index /ocfl-index
+ENV HOME /home/nonroot
+ENV OCFL_INDEX_SQLITE /home/nonroot/index.sqlite
+ENV OCFL_INDEX_STOREDIR /home/nonroot
+CMD ["/ocfl-index", "server"]
