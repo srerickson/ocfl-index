@@ -10,14 +10,25 @@ import (
 )
 
 type OcflIndexContentPath struct {
-	ObjectID int64
-	NodeID   int64
-	FilePath string
+	InventoryID int64
+	NodeID      int64
+	FilePath    string
+}
+
+type OcflIndexInventory struct {
+	ID              int64
+	RootID          int64
+	OcflID          string
+	Spec            string
+	DigestAlgorithm string
+	InventoryDigest string
+	Head            string
+	IndexedAt       time.Time
 }
 
 type OcflIndexName struct {
-	NodeID   int64
 	Name     string
+	NodeID   int64
 	ParentID int64
 }
 
@@ -25,28 +36,13 @@ type OcflIndexNode struct {
 	ID   int64
 	Dir  bool
 	Sum  []byte
-	Size int64
+	Size sql.NullInt64
 }
 
-type OcflIndexObject struct {
-	ID              int64
-	OcflID          string
-	Spec            string
-	DigestAlgorithm string
-	InventoryDigest string
-	RootPath        string
-	Head            string
-}
-
-type OcflIndexObjectVersion struct {
-	ObjectID    int64
-	Num         int64
-	Name        string
-	Message     string
-	Created     time.Time
-	UserName    string
-	UserAddress string
-	NodeID      int64
+type OcflIndexObjectRoot struct {
+	ID        int64
+	Path      string
+	IndexedAt time.Time
 }
 
 type OcflIndexSchema struct {
@@ -60,4 +56,15 @@ type OcflIndexStorageRoot struct {
 	Description string
 	Spec        string
 	IndexedAt   sql.NullTime
+}
+
+type OcflIndexVersion struct {
+	InventoryID int64
+	Num         int64
+	Name        string
+	Message     string
+	Created     time.Time
+	UserName    string
+	UserAddress string
+	NodeID      int64
 }

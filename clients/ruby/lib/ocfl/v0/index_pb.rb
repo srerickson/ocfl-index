@@ -62,6 +62,7 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
       optional :created, :message, 3, "google.protobuf.Timestamp", json_name: "created"
       proto3_optional :user, :message, 4, "ocfl.v0.GetObjectResponse.Version.User", json_name: "user"
       optional :size, :int64, 5, json_name: "size"
+      optional :has_size, :bool, 6, json_name: "hasSize"
     end
     add_message "ocfl.v0.GetObjectResponse.Version.User" do
       optional :name, :string, 1, json_name: "name"
@@ -79,14 +80,16 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
       optional :digest, :string, 1, json_name: "digest"
       optional :isdir, :bool, 2, json_name: "isdir"
       optional :size, :int64, 3, json_name: "size"
-      repeated :children, :message, 4, "ocfl.v0.GetObjectStateResponse.Item", json_name: "children"
-      optional :next_page_token, :string, 5, json_name: "nextPageToken"
+      optional :has_size, :bool, 4, json_name: "hasSize"
+      repeated :children, :message, 5, "ocfl.v0.GetObjectStateResponse.Item", json_name: "children"
+      optional :next_page_token, :string, 6, json_name: "nextPageToken"
     end
     add_message "ocfl.v0.GetObjectStateResponse.Item" do
       optional :name, :string, 1, json_name: "name"
       optional :isdir, :bool, 2, json_name: "isdir"
       optional :size, :int64, 3, json_name: "size"
-      optional :digest, :string, 4, json_name: "digest"
+      optional :has_size, :bool, 4, json_name: "hasSize"
+      optional :digest, :string, 5, json_name: "digest"
     end
     add_message "ocfl.v0.GetContentRequest" do
       optional :digest, :string, 1, json_name: "digest"

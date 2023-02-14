@@ -5,11 +5,11 @@
 WITH RECURSIVE
     paths(id, path) AS (
         SELECT versions.node_id, '.'
-        FROM ocfl_index_object_versions versions
-        INNER JOIN ocfl_index_objects objects ON versions.object_id = objects.id
-        WHERE objects.ocfl_id = ?1
+        FROM ocfl_index_versions versions
+        INNER JOIN ocfl_index_inventories invs ON versions.inventory_id = invs.id
+        WHERE invs.ocfl_id = ?1
         -- if version is '', use objects.head
-        AND versions.name = COALESCE(NULLIF(?2,''), objects.head)
+        AND versions.name = COALESCE(NULLIF(?2,''), invs.head)
     UNION
         SELECT 
             names.node_id,

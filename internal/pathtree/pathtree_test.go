@@ -198,18 +198,12 @@ func TestCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l := tree.Len(); l != 4 {
-		t.Fatal("expected Len() to be 4")
-	}
 	cp := tree.Copy()
-	if l := cp.Len(); l != 4 {
-		t.Fatal("expected Len() to be 4")
+	if tree.Len() != cp.Len() {
+		t.Fatal("original and copy have different number of nodes")
 	}
 	if _, err := cp.Get("zebra/file1.txt"); err != nil {
 		t.Fatal(err)
-	}
-	if l := tree.Len(); l != 4 {
-		t.Fatal("expected Len() to be 4")
 	}
 	if cp.IsParentOf(tree) || tree.IsParentOf(cp) {
 		t.Fatal("copy is still related to tree")

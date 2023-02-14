@@ -178,15 +178,17 @@ func asGetObjectStateResponse(inf *PathInfo) *connect.Response[api.GetObjectStat
 		Digest:        inf.Sum,
 		Isdir:         inf.IsDir,
 		Size:          inf.Size,
+		HasSize:       inf.HasSize,
 		NextPageToken: inf.NextCursor,
 		Children:      make([]*api.GetObjectStateResponse_Item, len(inf.Children)),
 	}
 	for i, p := range inf.Children {
 		msg.Children[i] = &api.GetObjectStateResponse_Item{
-			Name:   p.Name,
-			Size:   p.Size,
-			Isdir:  p.IsDir,
-			Digest: p.Sum,
+			Name:    p.Name,
+			Size:    p.Size,
+			HasSize: p.HasSize,
+			Isdir:   p.IsDir,
+			Digest:  p.Sum,
 		}
 	}
 	return connect.NewResponse(msg)
