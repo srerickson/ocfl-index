@@ -30,11 +30,7 @@ var serveCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
 		logger := NewLogger()
-		conf, err := NewConfig(logger)
-		if err != nil {
-			logger.Error(err, "configuration error")
-			return
-		}
+		conf := NewConfig(logger)
 		fsys, rootDir, err := conf.FS(ctx)
 		if err != nil {
 			logger.Error(err, "can't connect to backend")
@@ -43,8 +39,7 @@ var serveCmd = &cobra.Command{
 		if closer, ok := fsys.(io.Closer); ok {
 			defer closer.Close()
 		}
-		logger.Info("fs settings", "driver", conf.Driver, "bucket", conf.Bucket, "path", conf.Path)
-		if err := startServer(ctx, conf, fsys, rootDir); err != nil {
+		if err := startServer(ctx, &conf, fsys, rootDir); err != nil {
 			logger.Error(err, "server stopped")
 		}
 	},
@@ -54,12 +49,13 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	serveCmd.Flags().BoolVar(&serverFlags.skipIndexing, "skip-indexing", false, "skip indexing step on startup")
 	serveCmd.Flags().BoolVar(&serverFlags.filesizes, "filesizes", false, "index file sizes during reindex")
-	serveCmd.Flags().BoolVar(&serverFlags.inventories, "inventories", false, "index inventories sizes during reindex")
+	serveCmd.Flags().BoolVar(&serverFlags.inventories, "inventories", false, "index inventories during reindex")
 
 }
 
 func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) error {
-	db, err := sqlite.Open("file:" + c.DBFile)
+
+	db, err := sqlite.Open("file:" + c.DBFile + "?" + sqliteSettings)
 	if err != nil {
 		return err
 	}
@@ -73,7 +69,10 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	defer db.Close()
 	schemaV := fmt.Sprintf("%d.%d", maj, min)
 	c.Logger.Info("using index file", "file", c.DBFile, "schema", schemaV)
-	idx := index.NewIndex(db, fsys, rootDir, index.WithLogger(c.Logger))
+	idx := index.NewIndex(db, fsys, rootDir,
+		index.WithLogger(c.Logger),
+		index.WithObjectScanConc(c.ScanConc),
+	)
 	if !serverFlags.skipIndexing {
 		go func() {
 			// initial indexing

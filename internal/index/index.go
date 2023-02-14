@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/srerickson/ocfl"
+	"github.com/srerickson/ocfl-index/internal/pipeline"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -26,23 +27,26 @@ var ErrIndexValue = errors.New("unexpected value in index, possible corruption")
 
 // Index provides indexing for an OCFL Storage Root
 type Index struct {
-	Backend            // index database
-	ocfl.FS            // storage root fs
-	root        string // storage root directory
-	concurrency int
-	log         logr.Logger
-	store       *ocflv1.Store
+	Backend          // index database
+	ocfl.FS          // storage root fs
+	root      string // storage root directory
+	scanConc  int
+	parseConc int
+	log       logr.Logger
+	store     *ocflv1.Store
 }
 
 // NewIndex returns a new Index for OCFL storage root at root in fsys. An indexing
 // backend implementation (currently, sqlite) is also required.
 func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
+	numcpu := runtime.NumCPU()
 	idx := &Index{
-		Backend:     db,
-		FS:          fsys,
-		root:        root,
-		concurrency: runtime.GOMAXPROCS(-1),
-		log:         logr.Discard(),
+		Backend:   db,
+		FS:        fsys,
+		root:      root,
+		scanConc:  numcpu,
+		parseConc: numcpu,
+		log:       logr.Discard(),
 	}
 	for _, o := range opts {
 		o(idx)
@@ -53,9 +57,15 @@ func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
 // Option is used by NewIndex to configure the Index
 type Option func(*Index)
 
-func WithConcurrency(c int) Option {
+func WithObjectScanConc(c int) Option {
 	return func(opt *Index) {
-		opt.concurrency = c
+		opt.scanConc = c
+	}
+}
+
+func WithInventoryParseConc(c int) Option {
+	return func(opt *Index) {
+		opt.parseConc = c
 	}
 }
 
@@ -100,58 +110,109 @@ func (idx *Index) DoIndex(ctx context.Context, mode IndexMode, paths ...string) 
 	if err := idx.SetStoreInfo(ctx, idx.root, store.Description(), store.Spec()); err != nil {
 		return err
 	}
-	idx.log.Info("indexing storage root...", "path", idx.root, "concurrency", idx.concurrency, "indexingMode", mode)
+	idx.log.Info("indexing storage root...", "path", idx.root, "scan_workers", idx.scanConc, "parse_workers", idx.parseConc, "indexingMode", mode)
 	numObjs := 0
-	scanFn := func(obj *ocflv1.Object) error {
-		numObjs++
-		return idx.indexObject(ctx, obj, mode)
+	// three-phase pipeline for indexing: scan for object roots; parse inventories; do indexing.
+	scan := func(add func(*ocflv1.Object) error) error {
+		return store.ScanObjects(ctx, add, &ocflv1.ScanObjectsOpts{
+			Strict:      false,
+			Concurrency: idx.scanConc,
+		})
 	}
-	if err := store.ScanObjects(ctx, scanFn, &ocflv1.ScanObjectsOpts{
-		Strict:      false,
-		Concurrency: idx.concurrency,
-	}); err != nil {
-		return fmt.Errorf("indexing storage root: %w", err)
+	parse := func(ctx context.Context, obj *ocflv1.Object) (*indexJob, error) {
+		job, err := idx.newIndexJob(ctx, obj, mode)
+		if err != nil {
+			_, root := obj.Root()
+			return nil, fmt.Errorf("preparing to index '%s': %w", root, err)
+		}
+		return job, nil
+	}
+	index := func(job *indexJob) error {
+		numObjs++
+		if err := idx.doIndexJob(ctx, job); err != nil {
+			return fmt.Errorf("indexing '%s': %w", job.root, err)
+		}
+		return nil
+	}
+	if err := pipeline.Run(ctx, scan, parse, index, idx.parseConc); err != nil {
+		return fmt.Errorf("during indexing: %w", err)
 	}
 	idx.SetStoreIndexedAt(ctx)
-	idx.log.Info("indexing complete", "path", idx.root)
+	idx.log.Info("indexing complete", "path", idx.root, "num_objects", numObjs)
 	return nil
 }
 
-func (idx Index) indexObject(ctx context.Context, obj *ocflv1.Object, mode IndexMode) error {
+type indexJob struct {
+	mode    IndexMode
+	sidecar string
+	root    string
+	inv     *ocflv1.Inventory
+	prev    *Object // previous indexed value
+	sizes   map[string]int64
+}
+
+func (j indexJob) attrs() []any {
+	return []any{
+		"mode", j.mode,
+		"object_root", j.root,
+		"with_sizes", len(j.sizes) > 0,
+	}
+
+}
+
+func (idx Index) doIndexJob(ctx context.Context, job *indexJob) error {
+	now := time.Now()
+	idx.log.Info("indexing object", job.attrs()...)
+	switch job.mode {
+	case ModeObjectDirs:
+		return idx.IndexObjectRoot(ctx, job.root, now)
+	case ModeInventories:
+		if job.prev != nil && strings.EqualFold(job.sidecar, job.prev.InventoryDigest) {
+			// The inventory sidecar digest matches the previously indexed
+			// value. We don't need to index the inventory, so downgrade
+			// this object root indexing
+			idx.log.Info("skipping inventory indexing because sidecar digest is unchanged", "path", job.root)
+			return idx.IndexObjectRoot(ctx, job.root, now)
+		}
+		return idx.IndexObjectInventory(ctx, job.root, now, job.inv)
+	default:
+		// file size indexing final case.
+		return idx.IndexObjectInventorySize(ctx, job.root, now, job.inv, job.sizes)
+	}
+}
+
+func (idx *Index) newIndexJob(ctx context.Context, obj *ocflv1.Object, mode IndexMode) (*indexJob, error) {
 	fsys, root := obj.Root()
-	idx.log.Info("indexing object", "path", root, mode, mode)
-	prev, err := idx.GetObjectByPath(ctx, root)
+	job := &indexJob{
+		mode: mode,
+		root: root,
+	}
+	var err error
+	job.prev, err = idx.GetObjectByPath(ctx, root)
 	if err != nil && !errors.Is(err, ErrNotFound) {
-		return fmt.Errorf("getting previously indexed object for path='%s'", root)
+		return nil, fmt.Errorf("getting previously indexed object for path='%s': %w", root, err)
 	}
 	if mode == ModeObjectDirs {
-		return idx.IndexObjectRoot(ctx, root, time.Now())
+		return job, nil
 	}
 	// inventory indexing: check that sidecar has changed
-	sidecar, err := obj.InventorySidecar(ctx)
+	job.sidecar, err = obj.InventorySidecar(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if prev != nil && strings.EqualFold(sidecar, prev.InventoryDigest) && mode == ModeInventories {
-		// The inventory sidecar digest matches the previously indexed
-		// value. We don't need to index the inventory, so downgrade
-		// this object root indexing
-		idx.log.Info("skipping inventory indexing because sidecar digest is unchanged", "path", root)
-		return idx.IndexObjectRoot(ctx, root, time.Now())
-	}
-	inv, err := obj.Inventory(ctx)
+	job.inv, err = obj.Inventory(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if mode == ModeInventories {
-		return idx.IndexObjectInventory(ctx, root, time.Now(), inv)
+		return job, nil
 	}
 	// file size indexing final case.
-	sizes, err := getSizes(ctx, fsys, root, prev, inv)
+	job.sizes, err = getSizes(ctx, fsys, root, job.prev, job.inv)
 	if err != nil {
-		return fmt.Errorf("while scanning object content size: %w", err)
+		return nil, fmt.Errorf("while scanning object content size: %w", err)
 	}
-	return idx.IndexObjectInventorySize(ctx, root, time.Now(), inv, sizes)
+	return job, nil
 }
 
 // build FileSizes list. If available, use size information from prev to figure

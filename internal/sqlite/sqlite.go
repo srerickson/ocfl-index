@@ -91,11 +91,15 @@ func (db *Backend) InitSchema(ctx context.Context) (bool, error) {
 			schema.Major, schema.Minor, schemaVer.Major, schemaVer.Minor,
 		)
 	}
-	_, err = db.ExecContext(ctx, querySchema)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
+		return false, fmt.Errorf("starting new transaction: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, querySchema); err != nil {
 		return false, fmt.Errorf("create table: %w", err)
 	}
-	return true, nil
+	return true, tx.Commit()
 }
 
 func (db *Backend) GetStoreSummary(ctx context.Context) (index.StoreSummary, error) {
