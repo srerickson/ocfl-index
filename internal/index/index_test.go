@@ -14,7 +14,7 @@ var fixtureRoot = filepath.Join("..", "..", "testdata")
 
 func newTestIndex(ctx context.Context, fixture string, opts ...index.Option) (*index.Index, error) {
 	fsys := ocfl.DirFS(fixtureRoot)
-	db, err := sqlite.Open("file:tmp.sqlite?mode=memory")
+	db, err := sqlite.Open("file:tmp.sqlite?mode=memory&cache=shared")
 	if err != nil {
 		return nil, err
 	}

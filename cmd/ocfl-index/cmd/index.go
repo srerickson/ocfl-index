@@ -14,10 +14,6 @@ import (
 	_ "gocloud.dev/blob/azureblob"
 )
 
-var indexFlags struct {
-	conc int
-}
-
 // indexCmd represents the index command
 var indexCmd = &cobra.Command{
 	Use:   "index",
@@ -27,11 +23,7 @@ index file will be created if it does not exist.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
 		logger := NewLogger()
-		conf, err := NewConfig(logger)
-		if err != nil {
-			logger.Error(err, "configuration error")
-			return
-		}
+		conf := NewConfig(logger)
 		fsys, rootDir, err := conf.FS(ctx)
 		if err != nil {
 			logger.Error(err, "can't connect to backend")
@@ -40,7 +32,7 @@ index file will be created if it does not exist.`,
 		if closer, ok := fsys.(io.Closer); ok {
 			defer closer.Close()
 		}
-		if err := DoIndex(ctx, conf, fsys, rootDir); err != nil {
+		if err := DoIndex(ctx, &conf, fsys, rootDir); err != nil {
 			logger.Error(err, "index failed")
 		}
 	},
@@ -48,13 +40,10 @@ index file will be created if it does not exist.`,
 
 func init() {
 	rootCmd.AddCommand(indexCmd)
-	indexCmd.Flags().IntVar(
-		&indexFlags.conc, "concurrency", 4, "number of concurrent operations duration indexing",
-	)
 }
 
 func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) error {
-	idx, err := sqlite.Open(conf.DBFile)
+	idx, err := sqlite.Open(conf.DBFile + "?" + sqliteSettings)
 	if err != nil {
 		return err
 	}
@@ -64,6 +53,6 @@ func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) er
 	}
 	return index.NewIndex(
 		idx, fsys, rootDir,
-		index.WithConcurrency(conf.Conc),
+		index.WithObjectScanConc(conf.ScanConc),
 		index.WithLogger(conf.Logger)).DoIndex(ctx, index.ModeFileSizes)
 }

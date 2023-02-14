@@ -25,11 +25,17 @@ const (
 	envPath       = "OCFL_INDEX_STOREDIR"
 	envDBFile     = "OCFL_INDEX_SQLITE"
 	envAddr       = "OCFL_INDEX_LISTEN"
-	envConc       = "OCFL_INDEX_MAXGOROUTINES"
+	envScanConc   = "OCFL_INDEX_SCANWORKERS"  // number of workers for object scan
+	envParseConc  = "OCFL_INDEX_PARSEWORKERS" // numer of workers for parsing inventories
+
+	sqliteSettings = "_busy_timeout=10000&_journal=WAL&_sync=NORMAL&cache=shared"
 )
 
 type config struct {
 	Logger logr.Logger
+
+	// Server
+	Addr string // port
 
 	// Backend configuration
 	Driver     string // backend driver (supported: "fs", "s3", "azure")
@@ -40,11 +46,9 @@ type config struct {
 	// SQLITE file
 	DBFile string // sqlite file
 
-	// Server
-	Addr string // port
-
-	// Concurrency
-	Conc int
+	// Concurrency Settings
+	ScanConc  int // number of object scanning workers
+	ParseConc int // number of inventory parsing workers
 
 	IndexLevel index.IndexMode
 }
@@ -60,30 +64,49 @@ func NewLogger() logr.Logger {
 	return logger
 }
 
-func NewConfig(logger logr.Logger) (*config, error) {
-	c := &config{
+func NewConfig(logger logr.Logger) config {
+	c := config{
 		Logger: logger,
 	}
-	// values from environment variables
 	c.Bucket = getenvDefault(envBucket, "")
 	c.Driver = getenvDefault(envDriver, "fs")
 	c.Path = getenvDefault(envPath, ".")
 	c.S3Endpoint = getenvDefault(envS3Endpoint, "")
 	c.DBFile = getenvDefault(envDBFile, "index.sqlite")
 	c.Addr = getenvDefault(envAddr, ":8080")
-	conc, err := strconv.Atoi(getenvDefault(envConc, "0"))
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", envConc, err)
+	if conc, err := strconv.Atoi(getenvDefault(envScanConc, "0")); err == nil {
+		c.ScanConc = conc
 	}
-	// concurrency
-	c.Conc = conc
-	if c.Conc < 1 {
-		c.Conc = runtime.GOMAXPROCS(-1)
+	if c.ScanConc < 1 {
+		c.ScanConc = runtime.NumCPU()
 	}
-	return c, nil
+	if conc, err := strconv.Atoi(getenvDefault(envParseConc, "0")); err == nil {
+		c.ParseConc = conc
+	}
+	if c.ParseConc < 1 {
+		c.ParseConc = runtime.NumCPU()
+	}
+	logger.Info("config loaded", c.Attrs()...)
+	return c
 }
 
-func (c *config) FS(ctx context.Context) (ocfl.FS, string, error) {
+func (c config) Attrs() []any {
+	attrs := []any{
+		"addr", c.Addr,
+		"driver", c.Driver,
+		"bucket", c.Bucket,
+		"path", c.Path,
+		"dbfile", c.DBFile,
+		"scan_workers", c.ScanConc,
+		"parse_workers", c.ParseConc,
+	}
+	if c.S3Endpoint != "" {
+		attrs = append(attrs, "s3_endpoint", c.S3Endpoint)
+	}
+	return attrs
+}
+
+func (c config) FS(ctx context.Context) (ocfl.FS, string, error) {
 	switch c.Driver {
 	case "fs":
 		return ocfl.NewFS(os.DirFS(c.Path)), ".", nil

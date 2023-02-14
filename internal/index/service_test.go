@@ -27,11 +27,11 @@ type serviceTestFunc func(ctx context.Context, cli ocflv0connect.IndexServiceCli
 func newTestService(ctx context.Context, fixture string) (*index.Service, error) {
 	idx, err := newTestIndex(ctx, fixture)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initializing fixture index: %w", err)
 	}
 	srv := &index.Service{Index: idx}
 	if err := srv.DoIndex(ctx, index.ModeFileSizes); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initial fixture indexing: %w", err)
 	}
 	return srv, nil
 }
