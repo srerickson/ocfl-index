@@ -7,22 +7,59 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
-const countObjects = `-- name: CountObjects :one
-SELECT COUNT(id) from ocfl_index_objects
+const countInventories = `-- name: CountInventories :one
+SELECT COUNT(id) from ocfl_index_inventories
 `
 
-func (q *Queries) CountObjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countObjects)
+func (q *Queries) CountInventories(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countInventories)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
+const debugAllInventories = `-- name: DebugAllInventories :many
+SELECT id, root_id, ocfl_id, spec, digest_algorithm, inventory_digest, head, indexed_at from ocfl_index_inventories
+`
+
+func (q *Queries) DebugAllInventories(ctx context.Context) ([]OcflIndexInventory, error) {
+	rows, err := q.db.QueryContext(ctx, debugAllInventories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OcflIndexInventory
+	for rows.Next() {
+		var i OcflIndexInventory
+		if err := rows.Scan(
+			&i.ID,
+			&i.RootID,
+			&i.OcflID,
+			&i.Spec,
+			&i.DigestAlgorithm,
+			&i.InventoryDigest,
+			&i.Head,
+			&i.IndexedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const debugAllNames = `-- name: DebugAllNames :many
-SELECT node_id, name, parent_id FROM ocfl_index_names
+SELECT name, node_id, parent_id FROM ocfl_index_names
 `
 
 func (q *Queries) DebugAllNames(ctx context.Context) ([]OcflIndexName, error) {
@@ -34,7 +71,7 @@ func (q *Queries) DebugAllNames(ctx context.Context) ([]OcflIndexName, error) {
 	var items []OcflIndexName
 	for rows.Next() {
 		var i OcflIndexName
-		if err := rows.Scan(&i.NodeID, &i.Name, &i.ParentID); err != nil {
+		if err := rows.Scan(&i.Name, &i.NodeID, &i.ParentID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -80,28 +117,20 @@ func (q *Queries) DebugAllNodes(ctx context.Context) ([]OcflIndexNode, error) {
 	return items, nil
 }
 
-const debugAllObjects = `-- name: DebugAllObjects :many
-SELECT id, ocfl_id, spec, digest_algorithm, inventory_digest, root_path, head from ocfl_index_objects
+const debugAllObjectRoots = `-- name: DebugAllObjectRoots :many
+SELECT id, path, indexed_at from ocfl_index_object_roots
 `
 
-func (q *Queries) DebugAllObjects(ctx context.Context) ([]OcflIndexObject, error) {
-	rows, err := q.db.QueryContext(ctx, debugAllObjects)
+func (q *Queries) DebugAllObjectRoots(ctx context.Context) ([]OcflIndexObjectRoot, error) {
+	rows, err := q.db.QueryContext(ctx, debugAllObjectRoots)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OcflIndexObject
+	var items []OcflIndexObjectRoot
 	for rows.Next() {
-		var i OcflIndexObject
-		if err := rows.Scan(
-			&i.ID,
-			&i.OcflID,
-			&i.Spec,
-			&i.DigestAlgorithm,
-			&i.InventoryDigest,
-			&i.RootPath,
-			&i.Head,
-		); err != nil {
+		var i OcflIndexObjectRoot
+		if err := rows.Scan(&i.ID, &i.Path, &i.IndexedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -116,20 +145,20 @@ func (q *Queries) DebugAllObjects(ctx context.Context) ([]OcflIndexObject, error
 }
 
 const debugAllVersions = `-- name: DebugAllVersions :many
-SELECT object_id, num, name, message, created, user_name, user_address, node_id from ocfl_index_object_versions
+SELECT inventory_id, num, name, message, created, user_name, user_address, node_id from ocfl_index_versions
 `
 
-func (q *Queries) DebugAllVersions(ctx context.Context) ([]OcflIndexObjectVersion, error) {
+func (q *Queries) DebugAllVersions(ctx context.Context) ([]OcflIndexVersion, error) {
 	rows, err := q.db.QueryContext(ctx, debugAllVersions)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OcflIndexObjectVersion
+	var items []OcflIndexVersion
 	for rows.Next() {
-		var i OcflIndexObjectVersion
+		var i OcflIndexVersion
 		if err := rows.Scan(
-			&i.ObjectID,
+			&i.InventoryID,
 			&i.Num,
 			&i.Name,
 			&i.Message,
@@ -151,45 +180,127 @@ func (q *Queries) DebugAllVersions(ctx context.Context) ([]OcflIndexObjectVersio
 	return items, nil
 }
 
-const deleteObject = `-- name: DeleteObject :exec
-DELETE from ocfl_index_objects WHERE id = ?
+const deleteInventory = `-- name: DeleteInventory :exec
+DELETE from ocfl_index_inventories WHERE id = ?
 `
 
-func (q *Queries) DeleteObject(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteObject, id)
+func (q *Queries) DeleteInventory(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteInventory, id)
 	return err
 }
 
-const deleteObjectVersions = `-- name: DeleteObjectVersions :exec
-DELETE from ocfl_index_object_versions WHERE object_id = ?
+const deleteVersions = `-- name: DeleteVersions :exec
+DELETE from ocfl_index_versions WHERE inventory_id = ?
 `
 
-func (q *Queries) DeleteObjectVersions(ctx context.Context, objectID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteObjectVersions, objectID)
+func (q *Queries) DeleteVersions(ctx context.Context, inventoryID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteVersions, inventoryID)
 	return err
 }
 
 const getContentPath = `-- name: GetContentPath :one
-SELECT cont.file_path, objs.root_path from ocfl_index_content_paths cont
-INNER JOIN ocfl_index_objects objs on cont.object_id = objs.id
+SELECT cont.file_path, objs.path from ocfl_index_content_paths cont
+INNER JOIN ocfl_index_inventories invs ON cont.inventory_id = invs.id
+INNER JOIN ocfl_index_object_roots objs ON invs.root_id = objs.id
 INNER JOIN ocfl_index_nodes nodes on nodes.id = cont.node_id  AND nodes.dir IS FALSE
 WHERE nodes.sum = ? LIMIT 1
 `
 
 type GetContentPathRow struct {
 	FilePath string
-	RootPath string
+	Path     string
 }
 
 func (q *Queries) GetContentPath(ctx context.Context, sum []byte) (GetContentPathRow, error) {
 	row := q.db.QueryRowContext(ctx, getContentPath, sum)
 	var i GetContentPathRow
-	err := row.Scan(&i.FilePath, &i.RootPath)
+	err := row.Scan(&i.FilePath, &i.Path)
 	return i, err
 }
 
+const getInventoryID = `-- name: GetInventoryID :one
+SELECT invs.id, invs.root_id, invs.ocfl_id, invs.spec, invs.digest_algorithm, invs.inventory_digest, invs.head, invs.indexed_at, objs.path FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots objs ON objs.id = invs.root_id
+WHERE ocfl_id = ?
+`
+
+type GetInventoryIDRow struct {
+	ID              int64
+	RootID          int64
+	OcflID          string
+	Spec            string
+	DigestAlgorithm string
+	InventoryDigest string
+	Head            string
+	IndexedAt       time.Time
+	Path            string
+}
+
+func (q *Queries) GetInventoryID(ctx context.Context, ocflID string) (GetInventoryIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getInventoryID, ocflID)
+	var i GetInventoryIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RootID,
+		&i.OcflID,
+		&i.Spec,
+		&i.DigestAlgorithm,
+		&i.InventoryDigest,
+		&i.Head,
+		&i.IndexedAt,
+		&i.Path,
+	)
+	return i, err
+}
+
+const getInventoryPath = `-- name: GetInventoryPath :one
+SELECT invs.id, invs.root_id, invs.ocfl_id, invs.spec, invs.digest_algorithm, invs.inventory_digest, invs.head, invs.indexed_at, objs.path FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots objs ON objs.id = invs.root_id
+WHERE objs.path = ?
+`
+
+type GetInventoryPathRow struct {
+	ID              int64
+	RootID          int64
+	OcflID          string
+	Spec            string
+	DigestAlgorithm string
+	InventoryDigest string
+	Head            string
+	IndexedAt       time.Time
+	Path            string
+}
+
+func (q *Queries) GetInventoryPath(ctx context.Context, path string) (GetInventoryPathRow, error) {
+	row := q.db.QueryRowContext(ctx, getInventoryPath, path)
+	var i GetInventoryPathRow
+	err := row.Scan(
+		&i.ID,
+		&i.RootID,
+		&i.OcflID,
+		&i.Spec,
+		&i.DigestAlgorithm,
+		&i.InventoryDigest,
+		&i.Head,
+		&i.IndexedAt,
+		&i.Path,
+	)
+	return i, err
+}
+
+const getInventoryRowID = `-- name: GetInventoryRowID :one
+SELECT id from ocfl_index_inventories where ocfl_id = ?
+`
+
+func (q *Queries) GetInventoryRowID(ctx context.Context, ocflID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getInventoryRowID, ocflID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getNodeSum = `-- name: GetNodeSum :one
-SELECT id from ocfl_index_nodes WHERE sum = ? AND dir = ?
+SELECT id, dir, sum, size from ocfl_index_nodes WHERE sum = ? AND dir = ?
 `
 
 type GetNodeSumParams struct {
@@ -197,73 +308,28 @@ type GetNodeSumParams struct {
 	Dir bool
 }
 
-func (q *Queries) GetNodeSum(ctx context.Context, arg GetNodeSumParams) (int64, error) {
+func (q *Queries) GetNodeSum(ctx context.Context, arg GetNodeSumParams) (OcflIndexNode, error) {
 	row := q.db.QueryRowContext(ctx, getNodeSum, arg.Sum, arg.Dir)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const getObjectID = `-- name: GetObjectID :one
-SELECT id, ocfl_id, spec, digest_algorithm, inventory_digest, root_path, head FROM ocfl_index_objects WHERE ocfl_id = ?
-`
-
-func (q *Queries) GetObjectID(ctx context.Context, ocflID string) (OcflIndexObject, error) {
-	row := q.db.QueryRowContext(ctx, getObjectID, ocflID)
-	var i OcflIndexObject
+	var i OcflIndexNode
 	err := row.Scan(
 		&i.ID,
-		&i.OcflID,
-		&i.Spec,
-		&i.DigestAlgorithm,
-		&i.InventoryDigest,
-		&i.RootPath,
-		&i.Head,
+		&i.Dir,
+		&i.Sum,
+		&i.Size,
 	)
 	return i, err
 }
 
-const getObjectPath = `-- name: GetObjectPath :one
-SELECT id, ocfl_id, spec, digest_algorithm, inventory_digest, root_path, head FROM ocfl_index_objects WHERE root_path = ?
+const getObjectRoot = `-- name: GetObjectRoot :one
+
+SELECT id, path, indexed_at from ocfl_index_object_roots WHERE path = ?
 `
 
-func (q *Queries) GetObjectPath(ctx context.Context, rootPath string) (OcflIndexObject, error) {
-	row := q.db.QueryRowContext(ctx, getObjectPath, rootPath)
-	var i OcflIndexObject
-	err := row.Scan(
-		&i.ID,
-		&i.OcflID,
-		&i.Spec,
-		&i.DigestAlgorithm,
-		&i.InventoryDigest,
-		&i.RootPath,
-		&i.Head,
-	)
-	return i, err
-}
-
-const getObjectVersion = `-- name: GetObjectVersion :one
-SELECT object_id, num, name, message, created, user_name, user_address, node_id from ocfl_index_object_versions WHERE object_id = ?1 and num = ?2
-`
-
-type GetObjectVersionParams struct {
-	ObjectID int64
-	Num      int64
-}
-
-func (q *Queries) GetObjectVersion(ctx context.Context, arg GetObjectVersionParams) (OcflIndexObjectVersion, error) {
-	row := q.db.QueryRowContext(ctx, getObjectVersion, arg.ObjectID, arg.Num)
-	var i OcflIndexObjectVersion
-	err := row.Scan(
-		&i.ObjectID,
-		&i.Num,
-		&i.Name,
-		&i.Message,
-		&i.Created,
-		&i.UserName,
-		&i.UserAddress,
-		&i.NodeID,
-	)
+// OCFL Object Roots
+func (q *Queries) GetObjectRoot(ctx context.Context, path string) (OcflIndexObjectRoot, error) {
+	row := q.db.QueryRowContext(ctx, getObjectRoot, path)
+	var i OcflIndexObjectRoot
+	err := row.Scan(&i.ID, &i.Path, &i.IndexedAt)
 	return i, err
 }
 
@@ -299,38 +365,63 @@ func (q *Queries) GetStorageRoot(ctx context.Context) (OcflIndexStorageRoot, err
 	return i, err
 }
 
-const insertContentPathIgnore = `-- name: InsertContentPathIgnore :exec
-INSERT OR IGNORE INTO ocfl_index_content_paths (object_id, node_id, file_path) VALUES (
+const getVersion = `-- name: GetVersion :one
+SELECT inventory_id, num, name, message, created, user_name, user_address, node_id from ocfl_index_versions WHERE inventory_id = ?1 and num = ?2
+`
+
+type GetVersionParams struct {
+	InventoryID int64
+	Num         int64
+}
+
+func (q *Queries) GetVersion(ctx context.Context, arg GetVersionParams) (OcflIndexVersion, error) {
+	row := q.db.QueryRowContext(ctx, getVersion, arg.InventoryID, arg.Num)
+	var i OcflIndexVersion
+	err := row.Scan(
+		&i.InventoryID,
+		&i.Num,
+		&i.Name,
+		&i.Message,
+		&i.Created,
+		&i.UserName,
+		&i.UserAddress,
+		&i.NodeID,
+	)
+	return i, err
+}
+
+const insertIgnoreContentPath = `-- name: InsertIgnoreContentPath :exec
+INSERT OR IGNORE INTO ocfl_index_content_paths (inventory_id, node_id, file_path) VALUES (
     ?,
     (SELECT id FROM ocfl_index_nodes WHERE sum = ? AND dir IS FALSE LIMIT 1),
     ?)
 `
 
-type InsertContentPathIgnoreParams struct {
-	ObjectID int64
-	Sum      []byte
-	FilePath string
+type InsertIgnoreContentPathParams struct {
+	InventoryID int64
+	Sum         []byte
+	FilePath    string
 }
 
 // Content Paths
-func (q *Queries) InsertContentPathIgnore(ctx context.Context, arg InsertContentPathIgnoreParams) error {
-	_, err := q.db.ExecContext(ctx, insertContentPathIgnore, arg.ObjectID, arg.Sum, arg.FilePath)
+func (q *Queries) InsertIgnoreContentPath(ctx context.Context, arg InsertIgnoreContentPathParams) error {
+	_, err := q.db.ExecContext(ctx, insertIgnoreContentPath, arg.InventoryID, arg.Sum, arg.FilePath)
 	return err
 }
 
-const insertNameIgnore = `-- name: InsertNameIgnore :exec
+const insertIgnoreName = `-- name: InsertIgnoreName :exec
 INSERT OR IGNORE INTO ocfl_index_names (name, node_id, parent_id) values (?,?,?)
 `
 
-type InsertNameIgnoreParams struct {
+type InsertIgnoreNameParams struct {
 	Name     string
 	NodeID   int64
 	ParentID int64
 }
 
 // Names
-func (q *Queries) InsertNameIgnore(ctx context.Context, arg InsertNameIgnoreParams) error {
-	_, err := q.db.ExecContext(ctx, insertNameIgnore, arg.Name, arg.NodeID, arg.ParentID)
+func (q *Queries) InsertIgnoreName(ctx context.Context, arg InsertIgnoreNameParams) error {
+	_, err := q.db.ExecContext(ctx, insertIgnoreName, arg.Name, arg.NodeID, arg.ParentID)
 	return err
 }
 
@@ -341,7 +432,7 @@ INSERT INTO ocfl_index_nodes (sum, dir, size) values (?, ?, ?)
 type InsertNodeParams struct {
 	Sum  []byte
 	Dir  bool
-	Size int64
+	Size sql.NullInt64
 }
 
 // Nodes
@@ -353,50 +444,14 @@ func (q *Queries) InsertNode(ctx context.Context, arg InsertNodeParams) (int64, 
 	return result.LastInsertId()
 }
 
-const insertObject = `-- name: InsertObject :execlastid
-INSERT INTO ocfl_index_objects (
-    ocfl_id, 
-    spec, 
-    digest_algorithm, 
-    inventory_digest, 
-    root_path, 
-    head
-    ) values (?, ?, ?, ?, ?, ?)
-`
-
-type InsertObjectParams struct {
-	OcflID          string
-	Spec            string
-	DigestAlgorithm string
-	InventoryDigest string
-	RootPath        string
-	Head            string
-}
-
-// OCFL Object
-func (q *Queries) InsertObject(ctx context.Context, arg InsertObjectParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, insertObject,
-		arg.OcflID,
-		arg.Spec,
-		arg.DigestAlgorithm,
-		arg.InventoryDigest,
-		arg.RootPath,
-		arg.Head,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
-}
-
-const insertObjectVersion = `-- name: InsertObjectVersion :execlastid
-INSERT INTO ocfl_index_object_versions 
-    (object_id, name, message, created, user_name, user_address, node_id, num)
+const insertVersion = `-- name: InsertVersion :execlastid
+INSERT INTO ocfl_index_versions 
+    (inventory_id, name, message, created, user_name, user_address, node_id, num)
     VALUES (?1,?2,?3,?4,?5,?6,?7, CAST(LTRIM(?2,'v') AS INT))
 `
 
-type InsertObjectVersionParams struct {
-	ObjectID    int64
+type InsertVersionParams struct {
+	InventoryID int64
 	Name        string
 	Message     string
 	Created     time.Time
@@ -406,9 +461,9 @@ type InsertObjectVersionParams struct {
 }
 
 // OCFL Object Versions
-func (q *Queries) InsertObjectVersion(ctx context.Context, arg InsertObjectVersionParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, insertObjectVersion,
-		arg.ObjectID,
+func (q *Queries) InsertVersion(ctx context.Context, arg InsertVersionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertVersion,
+		arg.InventoryID,
 		arg.Name,
 		arg.Message,
 		arg.Created,
@@ -422,15 +477,50 @@ func (q *Queries) InsertObjectVersion(ctx context.Context, arg InsertObjectVersi
 	return result.LastInsertId()
 }
 
-const listObjectVersions = `-- name: ListObjectVersions :many
-SELECT versions.object_id, versions.num, versions.name, versions.message, versions.created, versions.user_name, versions.user_address, versions.node_id, nodes.size size FROM ocfl_index_object_versions versions
+const listObjectContentSize = `-- name: ListObjectContentSize :many
+SELECT cont.file_path, nodes.size from ocfl_index_content_paths cont
+INNER JOIN ocfl_index_nodes nodes on nodes.id = cont.node_id
+INNER JOIN ocfl_index_inventories invs ON cont.inventory_id = invs.id
+WHERE invs.ocfl_id = ? AND nodes.size IS NOT NULL
+`
+
+type ListObjectContentSizeRow struct {
+	FilePath string
+	Size     sql.NullInt64
+}
+
+func (q *Queries) ListObjectContentSize(ctx context.Context, ocflID string) ([]ListObjectContentSizeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listObjectContentSize, ocflID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListObjectContentSizeRow
+	for rows.Next() {
+		var i ListObjectContentSizeRow
+		if err := rows.Scan(&i.FilePath, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVersions = `-- name: ListVersions :many
+SELECT versions.inventory_id, versions.num, versions.name, versions.message, versions.created, versions.user_name, versions.user_address, versions.node_id, nodes.size size FROM ocfl_index_versions versions
 INNER JOIN ocfl_index_nodes nodes ON nodes.id = versions.node_id
-INNER JOIN ocfl_index_objects objects ON objects.id = versions.object_id
+INNER JOIN ocfl_index_inventories objects ON objects.id = versions.inventory_id
 WHERE objects.ocfl_id = ? ORDER BY versions.num ASC
 `
 
-type ListObjectVersionsRow struct {
-	ObjectID    int64
+type ListVersionsRow struct {
+	InventoryID int64
 	Num         int64
 	Name        string
 	Message     string
@@ -438,20 +528,20 @@ type ListObjectVersionsRow struct {
 	UserName    string
 	UserAddress string
 	NodeID      int64
-	Size        int64
+	Size        sql.NullInt64
 }
 
-func (q *Queries) ListObjectVersions(ctx context.Context, ocflID string) ([]ListObjectVersionsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listObjectVersions, ocflID)
+func (q *Queries) ListVersions(ctx context.Context, ocflID string) ([]ListVersionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listVersions, ocflID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListObjectVersionsRow
+	var items []ListVersionsRow
 	for rows.Next() {
-		var i ListObjectVersionsRow
+		var i ListVersionsRow
 		if err := rows.Scan(
-			&i.ObjectID,
+			&i.InventoryID,
 			&i.Num,
 			&i.Name,
 			&i.Message,
@@ -491,7 +581,7 @@ type NodeDirChildrenRow struct {
 	Name string
 	Dir  bool
 	Sum  []byte
-	Size int64
+	Size sql.NullInt64
 }
 
 func (q *Queries) NodeDirChildren(ctx context.Context, arg NodeDirChildrenParams) ([]NodeDirChildrenRow, error) {
@@ -521,6 +611,21 @@ func (q *Queries) NodeDirChildren(ctx context.Context, arg NodeDirChildrenParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const setNodeSize = `-- name: SetNodeSize :exec
+UPDATE ocfl_index_nodes SET size = ? WHERE sum = ? AND dir = ?
+`
+
+type SetNodeSizeParams struct {
+	Size sql.NullInt64
+	Sum  []byte
+	Dir  bool
+}
+
+func (q *Queries) SetNodeSize(ctx context.Context, arg SetNodeSizeParams) error {
+	_, err := q.db.ExecContext(ctx, setNodeSize, arg.Size, arg.Sum, arg.Dir)
+	return err
 }
 
 const setStorageRoot = `-- name: SetStorageRoot :exec
@@ -555,36 +660,109 @@ func (q *Queries) SetStorageRootIndexed(ctx context.Context) error {
 	return err
 }
 
-const updateObject = `-- name: UpdateObject :exec
-UPDATE ocfl_index_objects SET 
+const updateInventory = `-- name: UpdateInventory :exec
+UPDATE ocfl_index_inventories SET 
     spec = ?, 
     digest_algorithm = ?, 
     inventory_digest = ?, 
-    root_path = ?,
     head = ?,
-    ocfl_id = ?
+    ocfl_id = ?,
+    indexed_at = ?
     WHERE id = ?
 `
 
-type UpdateObjectParams struct {
+type UpdateInventoryParams struct {
 	Spec            string
 	DigestAlgorithm string
 	InventoryDigest string
-	RootPath        string
 	Head            string
 	OcflID          string
+	IndexedAt       time.Time
 	ID              int64
 }
 
-func (q *Queries) UpdateObject(ctx context.Context, arg UpdateObjectParams) error {
-	_, err := q.db.ExecContext(ctx, updateObject,
+func (q *Queries) UpdateInventory(ctx context.Context, arg UpdateInventoryParams) error {
+	_, err := q.db.ExecContext(ctx, updateInventory,
 		arg.Spec,
 		arg.DigestAlgorithm,
 		arg.InventoryDigest,
-		arg.RootPath,
 		arg.Head,
 		arg.OcflID,
+		arg.IndexedAt,
 		arg.ID,
 	)
 	return err
+}
+
+const upsertInventory = `-- name: UpsertInventory :one
+INSERT INTO ocfl_index_inventories (
+    ocfl_id, 
+    root_id,
+    spec, 
+    digest_algorithm, 
+    inventory_digest, 
+    head,
+    indexed_at
+) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    ON CONFLICT(ocfl_id) DO UPDATE SET 
+    root_id=?2,
+    spec=?3, 
+    digest_algorithm=?4, 
+    inventory_digest=?5, 
+    head=?6,
+    indexed_at=?7
+RETURNING id, root_id, ocfl_id, spec, digest_algorithm, inventory_digest, head, indexed_at
+`
+
+type UpsertInventoryParams struct {
+	OcflID          string
+	RootID          int64
+	Spec            string
+	DigestAlgorithm string
+	InventoryDigest string
+	Head            string
+	IndexedAt       time.Time
+}
+
+// OCFL Object Inventory
+func (q *Queries) UpsertInventory(ctx context.Context, arg UpsertInventoryParams) (OcflIndexInventory, error) {
+	row := q.db.QueryRowContext(ctx, upsertInventory,
+		arg.OcflID,
+		arg.RootID,
+		arg.Spec,
+		arg.DigestAlgorithm,
+		arg.InventoryDigest,
+		arg.Head,
+		arg.IndexedAt,
+	)
+	var i OcflIndexInventory
+	err := row.Scan(
+		&i.ID,
+		&i.RootID,
+		&i.OcflID,
+		&i.Spec,
+		&i.DigestAlgorithm,
+		&i.InventoryDigest,
+		&i.Head,
+		&i.IndexedAt,
+	)
+	return i, err
+}
+
+const upsertObjectRoot = `-- name: UpsertObjectRoot :one
+INSERT INTO ocfl_index_object_roots (path, indexed_at) VALUES (?1, ?2) 
+    ON CONFLICT(path) DO UPDATE SET indexed_at=?2
+RETURNING id, path, indexed_at
+`
+
+type UpsertObjectRootParams struct {
+	Path      string
+	IndexedAt time.Time
+}
+
+func (q *Queries) UpsertObjectRoot(ctx context.Context, arg UpsertObjectRootParams) (OcflIndexObjectRoot, error) {
+	row := q.db.QueryRowContext(ctx, upsertObjectRoot, arg.Path, arg.IndexedAt)
+	var i OcflIndexObjectRoot
+	err := row.Scan(&i.ID, &i.Path, &i.IndexedAt)
+	return i, err
 }

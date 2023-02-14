@@ -30,7 +30,7 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		return nil, err
 	}
 	srv := &index.Service{Index: idx}
-	if err := srv.DoIndex(ctx, true); err != nil {
+	if err := srv.DoIndex(ctx, index.ModeFileSizes); err != nil {
 		return nil, err
 	}
 	return srv, nil

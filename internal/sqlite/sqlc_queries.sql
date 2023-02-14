@@ -26,68 +26,98 @@ WHERE id = 1;
 -- name: GetStorageRoot :one
 SELECT * FROM ocfl_index_storage_root WHERE id = 1;
 
+--
+-- OCFL Object Roots
+--
+
+-- name: GetObjectRoot :one
+SELECT * from ocfl_index_object_roots WHERE path = ?;
+
+-- name: UpsertObjectRoot :one
+INSERT INTO ocfl_index_object_roots (path, indexed_at) VALUES (?1, ?2) 
+    ON CONFLICT(path) DO UPDATE SET indexed_at=?2
+RETURNING *;
+
+-- name: DebugAllObjectRoots :many
+SELECT * from ocfl_index_object_roots;
 
 --
--- OCFL Object
+-- OCFL Object Inventory
 -- 
--- name: InsertObject :execlastid
-INSERT INTO ocfl_index_objects (
+-- name: UpsertInventory :one
+INSERT INTO ocfl_index_inventories (
     ocfl_id, 
+    root_id,
     spec, 
     digest_algorithm, 
     inventory_digest, 
-    root_path, 
-    head
-    ) values (?, ?, ?, ?, ?, ?);
+    head,
+    indexed_at
+) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    ON CONFLICT(ocfl_id) DO UPDATE SET 
+    root_id=?2,
+    spec=?3, 
+    digest_algorithm=?4, 
+    inventory_digest=?5, 
+    head=?6,
+    indexed_at=?7
+RETURNING *;
 
--- name: GetObjectID :one
-SELECT * FROM ocfl_index_objects WHERE ocfl_id = ?;
+-- name: GetInventoryRowID :one
+SELECT id from ocfl_index_inventories where ocfl_id = ?;
 
--- name: GetObjectPath :one
-SELECT * FROM ocfl_index_objects WHERE root_path = ?;
+-- name: GetInventoryID :one
+SELECT invs.*, objs.path FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots objs ON objs.id = invs.root_id
+WHERE ocfl_id = ?;
 
--- name: CountObjects :one
-SELECT COUNT(id) from ocfl_index_objects;
+-- name: GetInventoryPath :one
+SELECT invs.*, objs.path FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots objs ON objs.id = invs.root_id
+WHERE objs.path = ?;
 
--- name: DebugAllObjects :many
-SELECT * from ocfl_index_objects;
+-- name: CountInventories :one
+SELECT COUNT(id) from ocfl_index_inventories;
 
--- name: UpdateObject :exec
-UPDATE ocfl_index_objects SET 
+-- name: DebugAllInventories :many
+SELECT * from ocfl_index_inventories;
+
+-- name: UpdateInventory :exec
+UPDATE ocfl_index_inventories SET 
     spec = ?, 
     digest_algorithm = ?, 
     inventory_digest = ?, 
-    root_path = ?,
     head = ?,
-    ocfl_id = ?
+    ocfl_id = ?,
+    indexed_at = ?
     WHERE id = ?;
 
--- name: DeleteObject :exec
-DELETE from ocfl_index_objects WHERE id = ?;
+-- name: DeleteInventory :exec
+DELETE from ocfl_index_inventories WHERE id = ?;
 
 
 --
 -- OCFL Object Versions
 --
--- name: InsertObjectVersion :execlastid
-INSERT INTO ocfl_index_object_versions 
-    (object_id, name, message, created, user_name, user_address, node_id, num)
+-- name: InsertVersion :execlastid
+INSERT INTO ocfl_index_versions 
+    (inventory_id, name, message, created, user_name, user_address, node_id, num)
     VALUES (?1,?2,?3,?4,?5,?6,?7, CAST(LTRIM(?2,'v') AS INT));
 
--- name: ListObjectVersions :many
-SELECT versions.*, nodes.size size FROM ocfl_index_object_versions versions
+-- name: ListVersions :many
+SELECT versions.*, nodes.size size FROM ocfl_index_versions versions
 INNER JOIN ocfl_index_nodes nodes ON nodes.id = versions.node_id
-INNER JOIN ocfl_index_objects objects ON objects.id = versions.object_id
+INNER JOIN ocfl_index_inventories objects ON objects.id = versions.inventory_id
 WHERE objects.ocfl_id = ? ORDER BY versions.num ASC;
 
--- name: GetObjectVersion :one
-SELECT * from ocfl_index_object_versions WHERE object_id = ?1 and num = ?2;
+-- name: GetVersion :one
+SELECT * from ocfl_index_versions WHERE inventory_id = ?1 and num = ?2;
 
 -- name: DebugAllVersions :many
-SELECT * from ocfl_index_object_versions;
+SELECT * from ocfl_index_versions;
 
--- name: DeleteObjectVersions :exec
-DELETE from ocfl_index_object_versions WHERE object_id = ?;
+-- name: DeleteVersions :exec
+DELETE from ocfl_index_versions WHERE inventory_id = ?;
 
 
 --
@@ -97,7 +127,11 @@ DELETE from ocfl_index_object_versions WHERE object_id = ?;
 INSERT INTO ocfl_index_nodes (sum, dir, size) values (?, ?, ?);
 
 -- name: GetNodeSum :one 
-SELECT id from ocfl_index_nodes WHERE sum = ? AND dir = ?;
+SELECT * from ocfl_index_nodes WHERE sum = ? AND dir = ?;
+
+-- name: SetNodeSize :exec
+UPDATE ocfl_index_nodes SET size = ? WHERE sum = ? AND dir = ?;
+
 
 -- name: NodeDirChildren :many
 SELECT child.id, names.name, child.dir, child.sum, child.size FROM ocfl_index_nodes child
@@ -111,7 +145,7 @@ SELECT * FROM ocfl_index_nodes;
 --
 -- Names
 --
--- name: InsertNameIgnore :exec
+-- name: InsertIgnoreName :exec
 INSERT OR IGNORE INTO ocfl_index_names (name, node_id, parent_id) values (?,?,?);
 
 -- name: DebugAllNames :many
@@ -120,14 +154,21 @@ SELECT * FROM ocfl_index_names;
 --
 -- Content Paths
 --
--- name: InsertContentPathIgnore :exec
-INSERT OR IGNORE INTO ocfl_index_content_paths (object_id, node_id, file_path) VALUES (
+-- name: InsertIgnoreContentPath :exec
+INSERT OR IGNORE INTO ocfl_index_content_paths (inventory_id, node_id, file_path) VALUES (
     ?,
     (SELECT id FROM ocfl_index_nodes WHERE sum = ? AND dir IS FALSE LIMIT 1),
     ?);
 
 -- name: GetContentPath :one
-SELECT cont.file_path, objs.root_path from ocfl_index_content_paths cont
-INNER JOIN ocfl_index_objects objs on cont.object_id = objs.id
+SELECT cont.file_path, objs.path from ocfl_index_content_paths cont
+INNER JOIN ocfl_index_inventories invs ON cont.inventory_id = invs.id
+INNER JOIN ocfl_index_object_roots objs ON invs.root_id = objs.id
 INNER JOIN ocfl_index_nodes nodes on nodes.id = cont.node_id  AND nodes.dir IS FALSE
 WHERE nodes.sum = ? LIMIT 1; 
+
+-- name: ListObjectContentSize :many
+SELECT cont.file_path, nodes.size from ocfl_index_content_paths cont
+INNER JOIN ocfl_index_nodes nodes on nodes.id = cont.node_id
+INNER JOIN ocfl_index_inventories invs ON cont.inventory_id = invs.id
+WHERE invs.ocfl_id = ? AND nodes.size IS NOT NULL;

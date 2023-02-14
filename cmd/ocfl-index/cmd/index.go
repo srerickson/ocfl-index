@@ -25,13 +25,14 @@ var indexCmd = &cobra.Command{
 	Long: `The index command indexes all objects in a specified OCFL storage root. The
 index file will be created if it does not exist.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		ctx := cmd.Context()
 		logger := NewLogger()
 		conf, err := NewConfig(logger)
 		if err != nil {
 			logger.Error(err, "configuration error")
 			return
 		}
-		fsys, rootDir, err := conf.FS(cmd.Context())
+		fsys, rootDir, err := conf.FS(ctx)
 		if err != nil {
 			logger.Error(err, "can't connect to backend")
 			return
@@ -39,7 +40,7 @@ index file will be created if it does not exist.`,
 		if closer, ok := fsys.(io.Closer); ok {
 			defer closer.Close()
 		}
-		if err := DoIndex(cmd.Context(), conf, fsys, rootDir); err != nil {
+		if err := DoIndex(ctx, conf, fsys, rootDir); err != nil {
 			logger.Error(err, "index failed")
 		}
 	},
@@ -64,5 +65,5 @@ func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) er
 	return index.NewIndex(
 		idx, fsys, rootDir,
 		index.WithConcurrency(conf.Conc),
-		index.WithLogger(conf.Logger)).DoIndex(ctx, true)
+		index.WithLogger(conf.Logger)).DoIndex(ctx, index.ModeFileSizes)
 }

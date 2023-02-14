@@ -45,6 +45,8 @@ type config struct {
 
 	// Concurrency
 	Conc int
+
+	IndexLevel index.IndexMode
 }
 
 func NewLogger() logr.Logger {

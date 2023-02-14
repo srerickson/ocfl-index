@@ -1,4 +1,5 @@
--- returns node using digest of parent and relative path
+-- returns node using digest of parent and relative path.
+-- Note: this is not used: here for reference.
 WITH RECURSIVE
     paths(id, path) AS (
         SELECT names.node_id, names.name

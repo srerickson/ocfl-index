@@ -262,12 +262,9 @@ func (parent *Node[T]) IsParentOf(child *Node[T]) bool {
 	return false
 }
 
-// Let returns the number of file nodes under node.
+// Len returns the number of nodes in the tree
 func (node *Node[T]) Len() int {
-	var l int
-	if node.children == nil {
-		return 1
-	}
+	l := 1
 	for _, ch := range node.children {
 		l += ch.Len()
 	}
