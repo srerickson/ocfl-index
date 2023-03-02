@@ -231,7 +231,7 @@ func getSizes(ctx context.Context, fsys ocfl.FS, root string, prev *Object, inv 
 		}
 	}
 	// versions to scan
-	toscan := inv.Head.VNumSeq()[lastSizeV:]
+	toscan := inv.Head.AsHead()[lastSizeV:]
 	// map source files -> size
 	sizes := map[string]int64{}
 	for _, vnum := range toscan {

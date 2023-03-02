@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/srerickson/ocfl"
@@ -63,61 +64,44 @@ func NewIndexingObject(id string, mode index.IndexMode, opts ...IndexingObjectOp
 
 func mockInventory(id string, head ocfl.VNum) *ocflv1.Inventory {
 	alg := digest.SHA512()
-
-	inv := &ocflv1.Inventory{
-		ID:               id,
-		Type:             ocfl.Spec{1, 1}.AsInvType(),
-		Head:             head,
-		DigestAlgorithm:  alg.ID(),
-		ContentDirectory: "content",
-		Versions:         make(map[ocfl.VNum]*ocflv1.Version),
-		Manifest:         digest.NewMap(),
-	}
-	// generate contents
-	// for 3 versions, we want:
-	// v1:
-	// 	- common.txt:    v1/content/common.txt
-	//  - change.txt:    v1/content/change.txt
-	//  - v1-new.txt: 	 v1/content/v1-new.txt
-	//  - v1-rename.txt: v1/content/v1-rename.txt
-	// 	v2:
-	// 	- common.txt:    v1/content/common.txt
-	//  - change.txt:    v2/content/change.txt
-	//  - v2-new.txt: 	 v2/content/v2-new.txt
-	// 	- v2-rename.txt: v1/content/v1-rename.txt
-	// 	v3:
-	// 	- common.txt:    v1/content/common.txt
-	//  - change.txt:    v3/content/change.txt
-	//  - v3-new.txt: 	 v3/content/v3-new.txt
-	// 	- v3-rename.txt: v1/content/v1-rename.txt
-	common := quickSumStr(alg, id+"common file")
-	rename := quickSumStr(alg, id+"rename file")
-	inv.Manifest.Add(rename, "v1/content/rename.txt")
-	inv.Manifest.Add(common, "v1/content/common.txt")
 	created := time.Date(2001, 1, 1, 1, 1, 1, 0, time.UTC)
-	for _, vnum := range inv.Head.VNumSeq() {
-		ver := &ocflv1.Version{
-			Message: "commit version " + vnum.String(),
-			User:    &ocflv1.User{Name: "nobody", Address: "email:none@none.com"},
-			Created: created,
-			State:   digest.NewMap(),
-		}
-		// Add files to state and manifest
-		v := vnum.String()
-		// common in very version
-		ver.State.Add(common, "a/common.txt")
-		// changes every version
-		change := quickSumStr(alg, id+"change "+v)
-		ver.State.Add(change, "a/b/change.txt")
-		inv.Manifest.Add(change, v+"/content/a/b/change.txt")
-		// only in one verion
-		vNew := quickSumStr(alg, id+"new "+vnum.String())
-		ver.State.Add(vNew, v+"-new.txt")
-		inv.Manifest.Add(vNew, v+"/content/"+v+"-new.txt")
-		// renamed in every verion
-		ver.State.Add(rename, v+"-rename.txt")
-		inv.Versions[vnum] = ver
+	user := ocflv1.User{Name: "nobody", Address: "email:none@none.com"}
+	// file content is unique to the object id
+	commonSum := quickDigestSet(alg, id+"common")
+	renameSum := quickDigestSet(alg, id+"rename")
+	var inv *ocflv1.Inventory
+	for i := 0; i < head.Num(); i++ {
+		v := "v" + strconv.Itoa(i+1)
 		created = created.AddDate(0, 0, 1)
+		stage := ocfl.NewStage(alg)
+		var err error
+		// a common file for all versions, using v1 content
+		commonsrc := ""
+		if i == 0 {
+			commonsrc = "common.txt"
+		}
+		stage.UnsafeAdd("common.txt", commonsrc, commonSum)
+		// a renamed file in every version, using v1 content
+		renamesrc := ""
+		if i == 0 {
+			renamesrc = "rename.txt"
+		}
+		stage.UnsafeAdd(v+"-rename.txt", renamesrc, renameSum)
+		// a uniqe file for every version
+		stage.UnsafeAdd(v+"-new.txt", v+"-new.txt", quickDigestSet(alg, id+v+"new"))
+		// a file that is changed in every version
+		stage.UnsafeAdd("change.txt", "change.txt", quickDigestSet(alg, id+v+"change"))
+		if i == 0 {
+			inv, err = ocflv1.NewInventory(stage, id, "content", 0, created, v, &user)
+			if err != nil {
+				panic(err)
+			}
+			continue
+		}
+		inv, err = inv.NextVersionInventory(stage, created, v, &user)
+		if err != nil {
+			panic(err)
+		}
 	}
 	// encode and decode inventory to set digest
 	reader, writer := io.Pipe()
@@ -137,8 +121,9 @@ func mockInventory(id string, head ocfl.VNum) *ocflv1.Inventory {
 	return newInv
 }
 
-func quickSumStr(alg digest.Alg, cont string) string {
+func quickDigestSet(alg digest.Alg, cont string) digest.Set {
 	h := alg.New()
 	h.Write([]byte(cont))
-	return hex.EncodeToString(h.Sum(nil))
+	dig := hex.EncodeToString(h.Sum(nil))
+	return digest.Set{alg.ID(): dig}
 }
