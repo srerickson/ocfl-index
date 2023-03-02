@@ -9,7 +9,11 @@ import (
 )
 
 func TestIndexingObject(t *testing.T) {
-	mk := mock.NewIndexingObject("test-inv", index.ModeFileSizes, mock.WithHead(ocfl.V(3)))
+	mk := mock.NewIndexingObject("test-inv",
+		index.ModeFileSizes,
+		mock.WithHead(ocfl.V(3)),
+		mock.BigDir("big", 1000),
+	)
 	if len(mk.Inventory.Versions) != 3 {
 		t.Fatal("expected three versions")
 	}
