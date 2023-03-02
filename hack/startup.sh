@@ -17,7 +17,7 @@ export OCFL_INDEX_SQLITE="faker.sqlite"
 export OCFL_INDEX_SCANWORKERS=100
 
 # number of go routeins for inventory parse
-export OCFL_INDEX_PARSEWORKERS=12
+export OCFL_INDEX_PARSEWORKERS=24
 
 
 # Additional options:

@@ -72,6 +72,7 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	idx := index.NewIndex(db, fsys, rootDir,
 		index.WithLogger(c.Logger),
 		index.WithObjectScanConc(c.ScanConc),
+		index.WithInventoryParseConc(c.ParseConc),
 	)
 	if !serverFlags.skipIndexing {
 		go func() {

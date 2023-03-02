@@ -54,5 +54,6 @@ func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) er
 	return index.NewIndex(
 		idx, fsys, rootDir,
 		index.WithObjectScanConc(conf.ScanConc),
-		index.WithLogger(conf.Logger)).DoIndex(ctx, index.ModeFileSizes)
+		index.WithInventoryParseConc(conf.ParseConc),
+		index.WithLogger(conf.Logger)).DoIndex(ctx, index.ModeInventories)
 }
