@@ -457,7 +457,7 @@ func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p
 		return nil, fmt.Errorf("invalid path: %s", p)
 	}
 	var vStr string
-	if !v.Empty() {
+	if !v.IsZero() {
 		vStr = v.String()
 	}
 	var baseNode = struct {

@@ -32,7 +32,7 @@ func PathTree(inv *ocflv1.Inventory, vnum ocfl.VNum, sizes map[string]int64) (*p
 			return err
 		}
 		if len(sizes) > 0 {
-			cp, _ := inv.ContentPath(vnum, logical)
+			cp, _ := inv.ContentPath(vnum.Num(), logical)
 			if size, ok := sizes[cp]; ok {
 				idxVal.HasSize = true
 				idxVal.Size = size
