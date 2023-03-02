@@ -34,11 +34,11 @@ var (
 	//go:embed schema.sql
 	querySchema string
 
-	//go:embed get_path_object.sql
-	queryGetPathObject string
+	//go:embed get_node_by_path.sql
+	queryGetNodeByPath string
 
-	////go:embed get_recursive_node.sql
-	//queryGetPathRecursive string
+	//go:embed get_node_children.sql
+	queryGetNodeChildren string
 
 	queryListTables string = `SELECT name FROM sqlite_master WHERE type='table';`
 )
@@ -445,7 +445,7 @@ func (db *Backend) asIndexInventory(ctx context.Context, sqlInv *sqlc.GetInvento
 	return result, nil
 }
 
-func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p string, _ bool, lim int, cur string) (*index.PathInfo, error) {
+func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p string, recursive bool, lim int, cur string) (*index.PathInfo, error) {
 	if lim == 0 {
 		lim = 1000
 	}
@@ -473,7 +473,7 @@ func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p
 		}
 		return fmt.Errorf("%s: %s: %w", id, p, err)
 	}
-	row := db.QueryRowContext(ctx, queryGetPathObject, id, vStr, p)
+	row := db.QueryRowContext(ctx, queryGetNodeByPath, id, vStr, p)
 	if err := row.Scan(&baseNode.id, &baseNode.sumbyt, &baseNode.isdir, &baseNode.size); err != nil {
 		return nil, errFn(err)
 	}
@@ -487,15 +487,36 @@ func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p
 		return result, nil
 	}
 	// base is a directory: get list of children
+	limParam := int64(lim + 1) // limit+1 to check for next page
+	var err error
+	if recursive {
+		// result includes all descendants of the node
+		result.Children, err = db.getNodeChildrenAll(ctx, baseNode.id, limParam, cur)
+	} else {
+		// result includes imediate children of the node
+		result.Children, err = db.getNodeChildren(ctx, qry, baseNode.id, limParam, cur)
+	}
+	if err != nil {
+		errFn(err)
+	}
+	// check if there are additional results
+	if l := len(result.Children); l == lim+1 {
+		result.Children = result.Children[:lim]
+		result.NextCursor = result.Children[lim-1].Name
+	}
+	return result, nil
+}
+
+func (db *Backend) getNodeChildren(ctx context.Context, qry *sqlc.Queries, nodeID int64, limit int64, cursor string) ([]index.PathItem, error) {
 	rows, err := qry.NodeDirChildren(ctx, sqlc.NodeDirChildrenParams{
-		ParentID: baseNode.id,
-		Name:     cur,
-		Limit:    int64(lim + 1), // limit+1 to check for next page
+		ParentID: nodeID,
+		Name:     cursor,
+		Limit:    limit,
 	})
 	if err != nil {
-		return nil, errFn(err)
+		return nil, err
 	}
-	result.Children = make([]index.PathItem, len(rows))
+	children := make([]index.PathItem, len(rows))
 	for i, r := range rows {
 		item := index.PathItem{
 			IsDir:   r.Dir,
@@ -504,14 +525,35 @@ func (db *Backend) GetObjectState(ctx context.Context, id string, v ocfl.VNum, p
 			Size:    r.Size.Int64,
 			HasSize: r.Size.Valid,
 		}
-		result.Children[i] = item
+		children[i] = item
 	}
-	// check if there are additional results
-	if l := len(result.Children); l == lim+1 {
-		result.Children = result.Children[:lim]
-		result.NextCursor = result.Children[lim-1].Name
+	return children, nil
+}
+
+func (db *Backend) getNodeChildrenAll(ctx context.Context, nodeID int64, limit int64, cursor string) ([]index.PathItem, error) {
+	var paths []index.PathItem
+	rows, err := db.QueryContext(ctx, queryGetNodeChildren, nodeID, cursor, limit)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			p        index.PathItem
+			id       int64
+			sumBytes []byte
+			size     sql.NullInt64
+		)
+		// paths.id, paths.path, nodes.sum, nodes.size
+		if err := rows.Scan(&id, &p.Name, &sumBytes, &size); err != nil {
+			return nil, err
+		}
+		p.Sum = hex.EncodeToString(sumBytes)
+		p.Size = size.Int64
+		p.HasSize = size.Valid
+		paths = append(paths, p)
+	}
+	return paths, nil
 }
 
 func (db *Backend) GetContentPath(ctx context.Context, sum string) (string, error) {

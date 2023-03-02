@@ -189,80 +189,57 @@ func TestListObjects(t *testing.T) {
 	})
 }
 
-// func TestGetPathList(t *testing.T) {
-// 	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	defer idx.Close()
-// 	ctx := context.Background()
-// 	_, err = idx.InitSchema(ctx)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	inv := mock.NewIndexingObject("test-object")
-// 	if err := idx.IndexObject(ctx, inv); err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	if err := pathtree.Walk(inv.State[inv.Inventory.Head], func(name string, sub *pathtree.Node[index.IndexingVal]) error {
-// 		if sub.IsDir() {
-// 			var expectChilds []string
-// 			for _, ch := range sub.DirEntries() {
-// 				expectChilds = append(expectChilds, ch.Name())
-// 			}
-// 			limits := []int{0, 1, 100, 1001} // test different limit settings
-// 			for _, limit := range limits {
-// 				gotChilds := make([]string, 0, len(expectChilds))
-// 				cursor := ""
-// 				for {
-// 					list, err := idx.GetObjectState(ctx, inv.Inventory.ID, inv.Inventory.Head, name, false, limit, cursor)
-// 					if err != nil {
-// 						return err
-// 					}
-// 					if len(list.Children) == 0 {
-// 						return errors.New("got empty path list")
-// 					}
-// 					for _, p := range list.Children {
-// 						gotChilds = append(gotChilds, p.Name)
-// 					}
-// 					if list.NextCursor == "" {
-// 						break
-// 					}
-// 					cursor = list.NextCursor
-// 				}
-// 				sort.Strings(expectChilds)
-// 				sort.Strings(gotChilds)
-// 				if !reflect.DeepEqual(gotChilds, expectChilds) {
-// 					return fmt.Errorf("for %s: expected children: %v, got %v", name, expectChilds, gotChilds)
-// 				}
-// 			}
-// 			return nil
-// 		}
-// 		info, err := idx.GetObjectState(ctx, inv.Inventory.ID, inv.Inventory.Head, name, false, 0, "")
-// 		if err != nil {
-// 			t.Fatal()
-// 		}
-// 		if info.IsDir {
-// 			t.Fatalf("for '%s': expected isdir to be false", name)
-// 		}
-// 		expDigest := hex.EncodeToString(sub.Val.Sum)
-// 		gotDigest := info.Sum
-// 		if !strings.EqualFold(expDigest, gotDigest) {
-// 			t.Fatalf("for '%s': go unexpected digest in index: '%s'", name, gotDigest)
-// 		}
-// 		return nil
-// 	}); err != nil {
-// 		t.Fatal(err)
-// 	}
-// }
+func TestGetObjectState(t *testing.T) {
+	ctx := context.Background()
+	idx, err := newSqliteIndex(ctx)
+	expNil(t, err)
+	defer idx.Close()
+	// index an object with 1231 files in a directory called "long"
+	id := "object-1"
+	head := ocfl.V(1)
+	dir := "long"
+	dirsize := 1231
+	mock1 := mock.NewIndexingObject(id,
+		index.ModeFileSizes,
+		mock.WithHead(head),
+		mock.BigDir(dir, dirsize))
+	err = idx.IndexObjectInventorySize(ctx, mock1.RootDir, mock1.IndexedAt, mock1.Inventory, mock1.FileSizes)
+	expNil(t, err)
+	// read long directory
+	cursor := ""
+	var allFiles []string
+	for {
+		// list of all files in head state
+		pathinfo, err := idx.GetObjectState(ctx, id, head, ".", true, 41, cursor)
+		expNil(t, err)
+		for _, ch := range pathinfo.Children {
+			allFiles = append(allFiles, ch.Name)
+		}
+		if pathinfo.NextCursor == "" {
+			break
+		}
+		cursor = pathinfo.NextCursor
+	}
+	expEq(t, "directory entries", len(allFiles), dirsize+4)
+	for _, f := range allFiles {
+		inf, err := idx.GetObjectState(ctx, id, head, f, false, 1, "")
+		expNil(t, err)
+		expEq(t, "HasSize", inf.HasSize, true)
+		expEq(t, "IsDir", inf.IsDir, false)
+		expEq(t, "Sum len", len(inf.Sum), 128)
+		expEq(t, "Children len", len(inf.Children), 0)
+		if inf.Size == 0 {
+			t.Fatal("size is missing")
+		}
+	}
+}
 
 func newSqliteIndex(ctx context.Context) (*sqlite.Backend, error) {
 	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")
 	if err != nil {
 		return nil, err
 	}
-	_, err = idx.InitSchema(ctx)
-	if err != nil {
+	if _, err = idx.InitSchema(ctx); err != nil {
 		idx.Close()
 		return nil, err
 	}

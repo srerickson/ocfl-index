@@ -1,4 +1,4 @@
--- returns node info using: 
+-- returns single node using object/version/path:
 -- ?1: objectid
 -- ?2: version
 -- ?3: path (which may be '.')
@@ -17,7 +17,6 @@ WITH RECURSIVE
             COALESCE(NULLIF(paths.path || '/','./'),'') || names.name as next_path
         FROM ocfl_index_names names
         INNER JOIN paths ON names.parent_id = paths.id
-        INNER JOIN ocfl_index_nodes nodes ON names.node_id = nodes.id
         WHERE ?3 = next_path 
             OR ?3 LIKE next_path || '/' || '%'
     )

@@ -162,7 +162,7 @@ func (j indexJob) attrs() []any {
 
 func (idx Index) doIndexJob(ctx context.Context, job *indexJob) error {
 	now := time.Now()
-	idx.log.Info("indexing object", job.attrs()...)
+	idx.log.V(10).Info("indexing object", job.attrs()...)
 	switch job.mode {
 	case ModeObjectDirs:
 		return idx.IndexObjectRoot(ctx, job.root, now)

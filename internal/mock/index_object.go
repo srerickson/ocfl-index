@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/url"
 	"strconv"
@@ -23,7 +24,9 @@ type IndexingObject struct {
 }
 
 type indexingObjectConf struct {
-	Head ocfl.VNum
+	Head       ocfl.VNum
+	BigDirSize int
+	BigDirName string
 }
 
 type IndexingObjectOption func(*indexingObjectConf)
@@ -31,6 +34,13 @@ type IndexingObjectOption func(*indexingObjectConf)
 func WithHead(h ocfl.VNum) IndexingObjectOption {
 	return func(conf *indexingObjectConf) {
 		conf.Head = h
+	}
+}
+
+func BigDir(name string, size int) IndexingObjectOption {
+	return func(conf *indexingObjectConf) {
+		conf.BigDirSize = size
+		conf.BigDirName = name
 	}
 }
 
@@ -48,7 +58,7 @@ func NewIndexingObject(id string, mode index.IndexMode, opts ...IndexingObjectOp
 	if mode == index.ModeObjectDirs {
 		return obj
 	}
-	obj.Inventory = mockInventory(id, conf.Head)
+	obj.Inventory = mockInventory(id, conf.Head, conf.BigDirName, conf.BigDirSize)
 	if mode == index.ModeInventories {
 		return obj
 	}
@@ -62,7 +72,7 @@ func NewIndexingObject(id string, mode index.IndexMode, opts ...IndexingObjectOp
 	return obj
 }
 
-func mockInventory(id string, head ocfl.VNum) *ocflv1.Inventory {
+func mockInventory(id string, head ocfl.VNum, bigname string, bigsize int) *ocflv1.Inventory {
 	alg := digest.SHA512()
 	created := time.Date(2001, 1, 1, 1, 1, 1, 0, time.UTC)
 	user := ocflv1.User{Name: "nobody", Address: "email:none@none.com"}
@@ -91,6 +101,13 @@ func mockInventory(id string, head ocfl.VNum) *ocflv1.Inventory {
 		stage.UnsafeAdd(v+"-new.txt", v+"-new.txt", quickDigestSet(alg, id+v+"new"))
 		// a file that is changed in every version
 		stage.UnsafeAdd("change.txt", "change.txt", quickDigestSet(alg, id+v+"change"))
+
+		// big directory
+		for i := 0; i < bigsize; i++ {
+			name := fmt.Sprintf("%s/%d-file.txt", bigname, i)
+			stage.UnsafeAdd(name, name, quickDigestSet(alg, name))
+		}
+
 		if i == 0 {
 			inv, err = ocflv1.NewInventory(stage, id, "content", 0, created, v, &user)
 			if err != nil {
