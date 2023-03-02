@@ -1,34 +1,39 @@
 /*
 Copyright (c) 2022 The Regents of the University of California.
 */
-package cmd
+package status
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/bufbuild/connect-go"
 	"github.com/spf13/cobra"
+	"github.com/srerickson/ocfl-index/cmd/ox/cmd/root"
 	ocflv0 "github.com/srerickson/ocfl-index/gen/ocfl/v0"
 )
 
-func init() {
-	root.cmd.AddCommand(&cobra.Command{
+type Cmd struct {
+	root *root.Cmd
+}
+
+func (status *Cmd) NewCommand(root *root.Cmd) *cobra.Command {
+	status.root = root
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "print summary info about the index and its storage root",
 		Long:  `print summary info about the index and its storage root`,
-		Run: func(c *cobra.Command, a []string) {
-			if err := root.Status(c.Context()); err != nil {
-				log.Fatal(err)
-			}
-		},
-	})
+	}
+	return cmd
 }
 
-func (ox *oxCmd) Status(ctx context.Context) error {
-	client := ox.serviceClient()
+func (status *Cmd) ParseArgs(args []string) error {
+	return nil
+}
+
+func (status Cmd) Run(ctx context.Context, args []string) error {
+	client := status.root.ServiceClient()
 	req := connect.NewRequest(&ocflv0.GetSummaryRequest{})
 	resp, err := client.GetSummary(ctx, req)
 	if err != nil {
