@@ -9,7 +9,7 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/iand/logfmtr v0.2.1
 	github.com/spf13/cobra v1.6.1
-	github.com/srerickson/ocfl v0.0.13
+	github.com/srerickson/ocfl v0.0.14
 	gocloud.dev v0.28.0
 	golang.org/x/net v0.7.0
 	google.golang.org/protobuf v1.28.1
