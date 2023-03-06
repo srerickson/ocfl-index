@@ -189,6 +189,15 @@ func (q *Queries) DeleteInventory(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteObjectRootsBefore = `-- name: DeleteObjectRootsBefore :exec
+DELETE FROM ocfl_index_object_roots WHERE indexed_at < ?1
+`
+
+func (q *Queries) DeleteObjectRootsBefore(ctx context.Context, indexedAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteObjectRootsBefore, indexedAt)
+	return err
+}
+
 const deleteVersions = `-- name: DeleteVersions :exec
 DELETE from ocfl_index_versions WHERE inventory_id = ?
 `

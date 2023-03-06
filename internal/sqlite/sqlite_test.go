@@ -135,6 +135,32 @@ func TestListObjectRoot(t *testing.T) {
 	expEq(t, "indexed object roots", found, numObjects)
 }
 
+func TestRemoveObjectsBefore(t *testing.T) {
+	ctx := context.Background()
+	idx, err := newSqliteIndex(ctx)
+	expNil(t, err)
+	defer idx.Close()
+	numObjects := 721
+	indexedAt := time.Now().Add(-7 * time.Hour) // seven hours ago
+	for i := 0; i < numObjects; i++ {
+		id := fmt.Sprintf("test-delroots-%d", i)
+		// index successive versions of the same object
+		mock := mock.NewIndexingObject(id, index.ModeObjectDirs)
+		expNil(t, idx.IndexObjectRoot(ctx, mock.RootDir, indexedAt))
+		indexedAt = indexedAt.Add(time.Hour)
+	}
+	roots, err := idx.DEBUG_AllObjecRootss(ctx)
+	expNil(t, err)
+	lenBefore := len(roots)
+	// should remove seven
+	expNil(t, idx.RemoveObjectsBefore(ctx, time.Now()))
+	roots, err = idx.DEBUG_AllObjecRootss(ctx)
+	expNil(t, err)
+	lenAfter := len(roots)
+	// expect 8 deleted objects
+	expEq(t, "deleted object roots", lenAfter, lenBefore-8)
+}
+
 func TestListObjects(t *testing.T) {
 	ctx := context.Background()
 	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")

@@ -32,7 +32,7 @@ create table ocfl_index_object_roots (
 -- OCFL Object Inventories
 create table ocfl_index_inventories (
     id INTEGER PRIMARY KEY, -- internal identifier
-    root_id INTEGER NOT NULL references ocfl_index_object_roots(id),
+    root_id INTEGER NOT NULL references ocfl_index_object_roots(id) ON DELETE CASCADE,
     ocfl_id TEXT NOT NULL, -- OCFL Object ID
     spec TEXT NOT NULL, -- OCFL specification version
     digest_algorithm TEXT NOT NULL, -- Inventory digest algorithm
@@ -46,7 +46,7 @@ create table ocfl_index_inventories (
 
 -- OCFL Object Versions
 create table ocfl_index_versions (
-    inventory_id INTEGER NOT NULL REFERENCES ocfl_index_inventories(id),
+    inventory_id INTEGER NOT NULL REFERENCES ocfl_index_inventories(id) ON DELETE CASCADE,
     num INTEGER NOT NULL, -- version num (1,2,3): CAST(LTRIM(name,'v') AS INT));
     name TEXT NOT NULL, -- version string (e.g. 'v4')
     message TEXT NOT NULL, -- 'message' field from inventory
@@ -84,7 +84,7 @@ create table ocfl_index_names (
 -- that are files should have corresponding content_paths. Content paths are
 -- scoped to an ocfl object.
 CREATE TABLE ocfl_index_content_paths (
-  inventory_id INTEGER NOT NULL REFERENCES ocfl_index_inventories(id),
+  inventory_id INTEGER NOT NULL REFERENCES ocfl_index_inventories(id) ON DELETE CASCADE,
   node_id INTEGER NOT NULL REFERENCES ocfl_index_nodes(id),
   file_path TEXT NOT NULL, -- path relative to the object path
   PRIMARY KEY(inventory_id, node_id)
