@@ -59,6 +59,7 @@ func Open(conf string) (*Backend, error) {
 		return nil, err
 	}
 	db.Exec("PRAGMA case_sensitive_like=ON;")
+	db.Exec("PRAGMA foreign_keys=ON;")
 	return &Backend{DB: *db}, nil
 }
 
@@ -147,7 +148,8 @@ func (db *Backend) IndexObjectRoot(ctx context.Context, root string, idxAt time.
 		return fmt.Errorf("starting new transaction: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := db.indexObjectRootTx(ctx, sqlc.New(&db.DB).WithTx(tx), root, idxAt); err != nil {
+	// always store indexed_at as URC
+	if _, err := db.indexObjectRootTx(ctx, sqlc.New(&db.DB).WithTx(tx), root, idxAt.UTC()); err != nil {
 		return fmt.Errorf("indexing object root: %w", err)
 
 	}
@@ -267,7 +269,22 @@ func (db *Backend) indexInventoryTx(ctx context.Context, tx *sqlc.Queries, rootR
 	return nil
 }
 
-// TODO
+// Remove all objects with indexed_at values older than before.
+func (db *Backend) RemoveObjectsBefore(ctx context.Context, indexedBefore time.Time) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting new transaction: %w", err)
+	}
+	qry := sqlc.New(db).WithTx(tx)
+	defer tx.Rollback()
+	// indexed_at is always UTC
+	if err := qry.DeleteObjectRootsBefore(ctx, indexedBefore.UTC()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// List entries for object roots table
 func (db *Backend) ListObjectRoots(ctx context.Context, limit int, cursor string) (*index.ObjectRootList, error) {
 	if limit < 1 || limit > 1000 {
 		limit = 1000

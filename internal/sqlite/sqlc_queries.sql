@@ -42,6 +42,9 @@ RETURNING *;
 SELECT * FROM ocfl_index_object_roots roots 
 WHERE roots.path > ?1 ORDER BY roots.path ASC LIMIT ?2;
 
+-- name: DeleteObjectRootsBefore :exec
+DELETE FROM ocfl_index_object_roots WHERE indexed_at < ?1;
+
 -- name: DebugAllObjectRoots :many
 SELECT * from ocfl_index_object_roots;
 

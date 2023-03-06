@@ -54,6 +54,7 @@ type Backend interface {
 
 	// ListObjectRoots is used to iterate over the object root directories in the index.
 	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
+	RemoveObjectsBefore(ctx context.Context, indexedBefore time.Time) error
 
 	// All OCFL Object in the index
 	ListObjects(ctx context.Context, order ObjectSort, limit int, cursor string) (*ObjectList, error)
