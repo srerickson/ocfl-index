@@ -38,6 +38,10 @@ INSERT INTO ocfl_index_object_roots (path, indexed_at) VALUES (?1, ?2)
     ON CONFLICT(path) DO UPDATE SET indexed_at=?2
 RETURNING *;
 
+-- name: ListObjectRoots :many 
+SELECT * FROM ocfl_index_object_roots roots 
+WHERE roots.path > ?1 ORDER BY roots.path ASC LIMIT ?2;
+
 -- name: DebugAllObjectRoots :many
 SELECT * from ocfl_index_object_roots;
 

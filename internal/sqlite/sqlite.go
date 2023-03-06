@@ -267,6 +267,34 @@ func (db *Backend) indexInventoryTx(ctx context.Context, tx *sqlc.Queries, rootR
 	return nil
 }
 
+// TODO
+func (db *Backend) ListObjectRoots(ctx context.Context, limit int, cursor string) (*index.ObjectRootList, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 1000
+	}
+	qry := sqlc.New(db)
+	// add 1 to limit to see if there are more items
+	roots, err := qry.ListObjectRoots(ctx, sqlc.ListObjectRootsParams{Path: cursor, Limit: int64(limit + 1)})
+	if err != nil {
+		return nil, err
+	}
+	result := &index.ObjectRootList{}
+	if len(roots) == limit+1 {
+		result.ObjectRoots = make([]index.ObjectRootListItem, limit)
+		// cursor is the path of the last item in the results
+		result.NextCursor = roots[limit-1].Path
+	} else {
+		result.ObjectRoots = make([]index.ObjectRootListItem, len(roots))
+	}
+	for i := range result.ObjectRoots {
+		result.ObjectRoots[i] = index.ObjectRootListItem{
+			Path:      roots[i].Path,
+			IndexedAt: roots[i].IndexedAt,
+		}
+	}
+	return result, nil
+}
+
 // We can't use sqlc here because we need to alter the query for different sort/cursor values.
 func (idx *Backend) ListObjects(ctx context.Context, sort index.ObjectSort, limit int, cursor string) (*index.ObjectList, error) {
 	// TODO implement additional sorts

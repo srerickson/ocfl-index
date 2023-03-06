@@ -107,6 +107,34 @@ func compareInventory(t *testing.T, idxInv sqlc.OcflIndexInventory, idxVers []sq
 	}
 }
 
+func TestListObjectRoot(t *testing.T) {
+	ctx := context.Background()
+	idx, err := newSqliteIndex(ctx)
+	expNil(t, err)
+	defer idx.Close()
+	numObjects := 721
+	for i := 0; i < numObjects; i++ {
+		id := fmt.Sprintf("test-listroots-%d", i)
+		// index successive versions of the same object
+		mock := mock.NewIndexingObject(id, index.ModeObjectDirs)
+		expNil(t, idx.IndexObjectRoot(ctx, mock.RootDir, mock.IndexedAt))
+	}
+	found := 0
+	cursor := ""
+	for {
+		items, err := idx.ListObjectRoots(ctx, 17, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found += len(items.ObjectRoots)
+		if items.NextCursor == "" {
+			break
+		}
+		cursor = items.NextCursor
+	}
+	expEq(t, "indexed object roots", found, numObjects)
+}
+
 func TestListObjects(t *testing.T) {
 	ctx := context.Background()
 	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")

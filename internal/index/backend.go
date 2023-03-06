@@ -52,7 +52,10 @@ type Backend interface {
 	// the indexing transactions is rolled-back and an error is returned.
 	IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error
 
-	// All OCFL Objects in the index
+	// ListObjectRoots is used to iterate over the object root directories in the index.
+	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
+
+	// All OCFL Object in the index
 	ListObjects(ctx context.Context, order ObjectSort, limit int, cursor string) (*ObjectList, error)
 	GetObject(ctx context.Context, objectID string) (*Object, error)
 	GetObjectByPath(ctx context.Context, rootPath string) (*Object, error)
@@ -88,6 +91,16 @@ const (
 
 func (s ObjectSort) Desc() bool {
 	return s&DESC == DESC
+}
+
+type ObjectRootList struct {
+	ObjectRoots []ObjectRootListItem
+	NextCursor  string
+}
+
+type ObjectRootListItem struct {
+	Path      string
+	IndexedAt time.Time
 }
 
 type ObjectList struct {
