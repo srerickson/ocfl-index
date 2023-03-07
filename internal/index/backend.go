@@ -11,6 +11,7 @@ import (
 // Backend is an interface that can be implemented for different databases for
 // storing the indexing.
 type Backend interface {
+	NewTx(context.Context) (BackendTx, error)
 
 	// Get/Set Storage Root details in the index FIXME: Do we really need to
 	// keep Storage Root Info in the database? It would make sense to reload the
@@ -24,21 +25,6 @@ type Backend interface {
 	// FIXME: explict timestamp argument.
 	SetStoreIndexedAt(ctx context.Context) error
 
-	// IndexObjectRoot adds the object root directory to the index, effectively
-	// declaring that an object exists at the path without fully indexing its
-	// inventory. This is a minimal indexing operation and all other Index
-	// methods include it. If root is already present in the index, its indexed
-	// timestamp is updated to idxAt (which should typically be time.Now())
-	// and nil is returned. The timestamp, idxAt, is truncated to the nearest
-	// second and converted to UTC before being stored in the index.
-	IndexObjectRoot(ctx context.Context, root string, idxAt time.Time) error
-
-	// IndexObjectInventory performs the same index operations as IndexObjectRoot and,
-	// additionally, indexes the inventory, inv, which should be the root
-	// inventory of the OCFL object at the path root. If an inventory with same
-	// ID as inv exists in the index, it is replaced by inv.
-	IndexObjectInventory(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory) error
-
 	// IndexObjectInventorySize performs the same index operations as
 	// IndexObjectInventory; additionally, it indexes file size information
 	// using sizes, a mapping of manifest content paths to file size. During
@@ -50,11 +36,10 @@ type Backend interface {
 	// inventory. If merging the sizes map with previously indexed size values
 	// does not result complete size information for all versions of the object,
 	// the indexing transactions is rolled-back and an error is returned.
-	IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error
+	// IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error
 
 	// ListObjectRoots is used to iterate over the object root directories in the index.
 	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
-	RemoveObjectsBefore(ctx context.Context, indexedBefore time.Time) error
 
 	// All OCFL Object in the index
 	ListObjects(ctx context.Context, order ObjectSort, limit int, cursor string) (*ObjectList, error)
@@ -66,8 +51,37 @@ type Backend interface {
 	GetObjectState(ctx context.Context, objectID string, vnum ocfl.VNum, base string, recursive bool, limit int, cursor string) (*PathInfo, error)
 
 	// GetContentPath returns the path to a file with digest sum. The path is relative to
-	// the storage root's ocfl.FS.
+	// the storage root.
 	GetContentPath(ctx context.Context, sum string) (string, error)
+}
+
+type BackendTx interface {
+	Rollback() error
+	Commit() error
+
+	// IndexObjectRoot adds the object root directory to the index, effectively
+	// declaring that an object exists at the path without fully indexing its
+	// inventory. This is a minimal indexing operation and all other Index
+	// methods include it. The object root is relative to the storage root path.
+	// If root is already present in the index, its indexed timestamp is updated
+	// to idxAt (which should typically be time.Now()) and nil is returned. The
+	// timestamp, idxAt, is truncated to the nearest second and converted to UTC
+	// before being stored in the index.
+	IndexObjectRoot(ctx context.Context, idxAt time.Time, roots ...ObjectRoot) error
+
+	// IndexObjectInventory performs the same index operations as IndexObjectRoot and,
+	// additionally, indexes the inventory, inv, which should be the root
+	// inventory of the OCFL object at the path root. If an inventory with same
+	// ID as inv exists in the index, it is replaced by inv.
+	IndexObjectInventory(ctx context.Context, idxAt time.Time, invs ...ObjectInventory) error
+
+	//
+	RemoveObjectsBefore(ctx context.Context, indexedBefore time.Time) error
+
+	// GetObjectByPath returns the path to a file with digest sum. The path is relative to
+	// the storage root.
+	GetObjectByPath(ctx context.Context, p string) (*Object, error)
+	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
 }
 
 type StoreSummary struct {
@@ -94,12 +108,24 @@ func (s ObjectSort) Desc() bool {
 	return s&DESC == DESC
 }
 
+type ObjectRoot struct {
+	// Object root's directory relative to the storage root.
+	Path string
+}
+
+type ObjectInventory struct {
+	// Object root's directory relative to the storage root.
+	Path      string
+	Inventory *ocflv1.Inventory
+}
+
 type ObjectRootList struct {
 	ObjectRoots []ObjectRootListItem
 	NextCursor  string
 }
 
 type ObjectRootListItem struct {
+	// Object root's directory relative to the storage root.
 	Path      string
 	IndexedAt time.Time
 }

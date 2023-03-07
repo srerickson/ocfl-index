@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/srerickson/ocfl"
-	"github.com/srerickson/ocfl-index/internal/index"
 	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
 )
@@ -44,7 +43,7 @@ func BigDir(name string, size int) IndexingObjectOption {
 	}
 }
 
-func NewIndexingObject(id string, mode index.IndexMode, opts ...IndexingObjectOption) *IndexingObject {
+func NewIndexingObject(id string, opts ...IndexingObjectOption) *IndexingObject {
 	conf := indexingObjectConf{
 		Head: ocfl.V(1),
 	}
@@ -55,13 +54,7 @@ func NewIndexingObject(id string, mode index.IndexMode, opts ...IndexingObjectOp
 		RootDir:   url.PathEscape(id),
 		IndexedAt: time.Now(),
 	}
-	if mode == index.ModeObjectDirs {
-		return obj
-	}
 	obj.Inventory = mockInventory(id, conf.Head, conf.BigDirName, conf.BigDirSize)
-	if mode == index.ModeInventories {
-		return obj
-	}
 	// index.ModeFileSizes is left
 	// fake sizes for every manifest entry
 	obj.FileSizes = map[string]int64{}

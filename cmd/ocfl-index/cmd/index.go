@@ -43,17 +43,22 @@ func init() {
 }
 
 func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) error {
-	idx, err := sqlite.Open(conf.DBFile + "?" + sqliteSettings)
+	db, err := sqlite.Open("file:" + conf.DBFile + "?" + sqliteSettings)
 	if err != nil {
 		return err
 	}
-	defer idx.Close()
-	if _, err := idx.InitSchema(ctx); err != nil {
+	defer db.Close()
+	if _, err := db.InitSchema(ctx); err != nil {
 		return err
 	}
-	return index.NewIndex(
-		idx, fsys, rootDir,
+	idx := index.NewIndex(
+		db, fsys, rootDir,
 		index.WithObjectScanConc(conf.ScanConc),
 		index.WithInventoryParseConc(conf.ParseConc),
-		index.WithLogger(conf.Logger)).DoIndex(ctx, index.ModeInventories)
+		index.WithLogger(conf.Logger))
+
+	if err := idx.SyncObjectRoots(ctx); err != nil {
+		return err
+	}
+	return idx.IndexInventories(ctx)
 }

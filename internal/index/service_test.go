@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http/httptest"
 	"testing"
 
@@ -30,7 +31,12 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		return nil, fmt.Errorf("initializing fixture index: %w", err)
 	}
 	srv := &index.Service{Index: idx}
-	if err := srv.DoIndex(ctx, index.ModeFileSizes); err != nil {
+	log.Println("updating object root directory index ... ")
+	if err := srv.SyncObjectRoots(ctx); err != nil {
+		return nil, fmt.Errorf("initial object root sync: %w", err)
+	}
+	log.Println("indexing inventories ... ")
+	if err := srv.IndexInventories(ctx); err != nil {
 		return nil, fmt.Errorf("initial fixture indexing: %w", err)
 	}
 	return srv, nil

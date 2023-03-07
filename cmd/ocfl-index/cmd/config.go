@@ -49,8 +49,6 @@ type config struct {
 	// Concurrency Settings
 	ScanConc  int // number of object scanning workers
 	ParseConc int // number of inventory parsing workers
-
-	IndexLevel index.IndexMode
 }
 
 func NewLogger() logr.Logger {

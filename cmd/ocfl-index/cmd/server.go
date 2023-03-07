@@ -19,7 +19,6 @@ import (
 
 var serverFlags struct {
 	skipIndexing bool // skip indexing on startup
-	filesizes    bool // indexing level
 	inventories  bool // indexing level
 }
 
@@ -48,7 +47,6 @@ var serveCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(serveCmd)
 	serveCmd.Flags().BoolVar(&serverFlags.skipIndexing, "skip-indexing", false, "skip indexing step on startup")
-	serveCmd.Flags().BoolVar(&serverFlags.filesizes, "filesizes", false, "index file sizes during reindex")
 	serveCmd.Flags().BoolVar(&serverFlags.inventories, "inventories", false, "index inventories during reindex")
 
 }
@@ -77,14 +75,7 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	if !serverFlags.skipIndexing {
 		go func() {
 			// initial indexing
-			level := index.ModeObjectDirs
-			if serverFlags.inventories {
-				level = index.ModeInventories
-			}
-			if serverFlags.filesizes {
-				level = index.ModeFileSizes
-			}
-			if err := idx.DoIndex(ctx, level); err != nil {
+			if err := idx.IndexInventories(ctx); err != nil {
 				c.Logger.Error(err, "initial indexing failed")
 			}
 		}()

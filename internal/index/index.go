@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -15,6 +13,8 @@ import (
 	"github.com/srerickson/ocfl-index/internal/pipeline"
 	"github.com/srerickson/ocfl/ocflv1"
 )
+
+const txCapInv = 10
 
 // set during with build with
 // -ldflags -X 'github.com/srerickson/ocfl-index/internal/index.Version=v0.0.X'
@@ -75,144 +75,144 @@ func WithLogger(l logr.Logger) Option {
 	}
 }
 
-// IndexMode values are used to represent how extensive an Indexing operation
-// should be
-type IndexMode uint8
-
-const (
-	// Index object root directories
-	ModeObjectDirs IndexMode = iota
-	// Index object root directories and inventories
-	ModeInventories
-	// Index object root directories, inventories, and file sizes
-	ModeFileSizes
-)
-
-func (l IndexMode) String() string {
-	switch l {
-	case ModeObjectDirs:
-		return "objectRoots"
-	case ModeInventories:
-		return "objectRoots,inventories"
-	case ModeFileSizes:
-		return "objectRoots,inventories,fileSizes"
-	}
-	return "invalid"
-}
-
-func (idx *Index) DoIndex(ctx context.Context, mode IndexMode, paths ...string) error {
+func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
 	store, err := ocflv1.GetStore(ctx, idx.FS, idx.root)
 	if err != nil {
 		return err
 	}
 	idx.store = store
-	// store the storage root's info in the database -- do we need to do this? Why not just keep the values in idx?
+	// store the storage root's info in the database -- do we need to do this?
+	// Why not just keep the values in idx?
 	if err := idx.SetStoreInfo(ctx, idx.root, store.Description(), store.Spec()); err != nil {
 		return err
 	}
-	idx.log.Info("indexing storage root...", "path", idx.root, "scan_workers", idx.scanConc, "parse_workers", idx.parseConc, "indexingMode", mode)
-	numObjs := 0
-	// three-phase pipeline for indexing: scan for object roots; parse inventories; do indexing.
-	scan := func(add func(*ocflv1.Object) error) error {
-		return store.ScanObjects(ctx, add, &ocflv1.ScanObjectsOpts{
-			Strict:      false,
-			Concurrency: idx.scanConc,
-		})
-	}
-	parse := func(ctx context.Context, obj *ocflv1.Object) (*indexJob, error) {
-		job, err := idx.newIndexJob(ctx, obj, mode)
+	// txCh is used to share the database transcation across multiple go
+	// routines.
+	txCh := make(chan BackendTx, 1)
+	defer func() {
+		tx := <-txCh
+		tx.Rollback()
+		close(txCh)
+	}()
+	{
+		// new transaction in NewTx
+		tx, err := idx.NewTx(ctx)
 		if err != nil {
-			_, root := obj.Root()
+			return err
+		}
+		txCh <- tx
+	}
+	idx.log.Info("indexing inventories ...", "path", idx.root, "inventory_workers", idx.parseConc)
+	numObjs := 0
+	// three-phase pipeline for indexing: scan for object roots; parse
+	// inventories; do indexing.
+	scan := func(add func(string) error) error {
+		cursor := ""
+		for {
+			tx := <-txCh
+			roots, err := tx.ListObjectRoots(ctx, 0, cursor)
+			if err != nil {
+				txCh <- tx
+				return err
+			}
+			txCh <- tx
+			for _, r := range roots.ObjectRoots {
+				if add(r.Path); err != nil {
+					return nil
+				}
+			}
+			if roots.NextCursor == "" {
+				break
+			}
+			cursor = roots.NextCursor
+		}
+		return nil
+	}
+	// parse inventories function (run in multiple go routines)
+	parse := func(root string) (*indexJob, error) {
+		job, err := idx.newIndexJob(ctx, root, txCh)
+		if err != nil {
 			return nil, fmt.Errorf("preparing to index '%s': %w", root, err)
 		}
 		return job, nil
 	}
-	index := func(job *indexJob) error {
+	// index update function (single go routine)
+	index := func(root string, job *indexJob, err error) error {
+		if err != nil {
+			return err
+		}
+		if job.inv == nil {
+			return nil // inventory had errors, skip it
+		}
+		if job.prev != nil && job.sidecar != "" && job.prev.InventoryDigest == job.sidecar {
+			// unchanged skip it
+			return nil
+		}
 		numObjs++
-		if err := idx.doIndexJob(ctx, job); err != nil {
-			return fmt.Errorf("indexing '%s': %w", job.root, err)
+		objInvs := ObjectInventory{Path: root, Inventory: job.inv}
+		// index inventories
+		tx := <-txCh
+		defer func() {
+			txCh <- tx
+		}()
+		if err := tx.IndexObjectInventory(ctx, time.Now(), objInvs); err != nil {
+			return err
+		}
+		if numObjs%txCapInv == 0 {
+			var err error
+			if err = tx.Commit(); err != nil {
+				return err
+			}
+			// set tx as a new transaction
+			if tx, err = idx.NewTx(ctx); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
-	if err := pipeline.Run(ctx, scan, parse, index, idx.parseConc); err != nil {
+	if err := pipeline.Run(scan, parse, index, idx.parseConc); err != nil {
 		return fmt.Errorf("during indexing: %w", err)
 	}
-	idx.SetStoreIndexedAt(ctx)
-	idx.log.Info("indexing complete", "path", idx.root, "num_objects", numObjs)
+	{
+		// commit any pending changes
+		tx := <-txCh
+		if err := tx.Commit(); err != nil {
+			txCh <- tx
+			return err
+		}
+		txCh <- tx
+	}
+	idx.log.Info("indexing complete", "path", idx.root, "new_updated", numObjs)
 	return nil
 }
 
 type indexJob struct {
-	mode    IndexMode
 	sidecar string
-	root    string
 	inv     *ocflv1.Inventory
 	prev    *Object // previous indexed value
-	sizes   map[string]int64
 }
 
-func (j indexJob) attrs() []any {
-	return []any{
-		"mode", j.mode,
-		"object_root", j.root,
-		"with_sizes", len(j.sizes) > 0,
-	}
-
-}
-
-func (idx Index) doIndexJob(ctx context.Context, job *indexJob) error {
-	now := time.Now()
-	idx.log.V(10).Info("indexing object", job.attrs()...)
-	switch job.mode {
-	case ModeObjectDirs:
-		return idx.IndexObjectRoot(ctx, job.root, now)
-	case ModeInventories:
-		if job.prev != nil && strings.EqualFold(job.sidecar, job.prev.InventoryDigest) {
-			// The inventory sidecar digest matches the previously indexed
-			// value. We don't need to index the inventory, so downgrade
-			// this object root indexing
-			idx.log.Info("skipping inventory indexing because sidecar digest is unchanged", "path", job.root)
-			return idx.IndexObjectRoot(ctx, job.root, now)
-		}
-		return idx.IndexObjectInventory(ctx, job.root, now, job.inv)
-	default:
-		// file size indexing final case.
-		return idx.IndexObjectInventorySize(ctx, job.root, now, job.inv, job.sizes)
-	}
-}
-
-func (idx *Index) newIndexJob(ctx context.Context, obj *ocflv1.Object, mode IndexMode) (*indexJob, error) {
-	fsys, root := obj.Root()
-	job := &indexJob{
-		mode: mode,
-		root: root,
-	}
+func (idx *Index) newIndexJob(ctx context.Context, root string, txCh chan BackendTx) (*indexJob, error) {
+	var job indexJob
 	var err error
-	job.prev, err = idx.GetObjectByPath(ctx, root)
+	invPath := path.Join(idx.root, root, "inventory.json")
+	inv, vErrs := ocflv1.ValidateInventory(ctx, idx, invPath, nil)
+	if err := vErrs.Err(); err != nil {
+		// don't quit if the inventory has errors
+		idx.log.Error(err, "inventory has errors", "path", invPath)
+		return &job, nil
+	}
+	job.inv = inv
+	job.sidecar = inv.Digest()
+	tx := <-txCh
+	defer func() {
+		txCh <- tx
+	}()
+	job.prev, err = tx.GetObjectByPath(ctx, root)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, fmt.Errorf("getting previously indexed object for path='%s': %w", root, err)
 	}
-	if mode == ModeObjectDirs {
-		return job, nil
-	}
-	// inventory indexing: check that sidecar has changed
-	job.sidecar, err = obj.InventorySidecar(ctx)
-	if err != nil {
-		return nil, err
-	}
-	job.inv, err = obj.Inventory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if mode == ModeInventories {
-		return job, nil
-	}
-	// file size indexing final case.
-	job.sizes, err = getSizes(ctx, fsys, root, job.prev, job.inv)
-	if err != nil {
-		return nil, fmt.Errorf("while scanning object content size: %w", err)
-	}
-	return job, nil
+	return &job, nil
 }
 
 // build FileSizes list. If available, use size information from prev to figure
@@ -221,44 +221,44 @@ func (idx *Index) newIndexJob(ctx context.Context, obj *ocflv1.Object, mode Inde
 // files from a previous version, we will have partial size information for that
 // version... need to figure out how to merge the existing size information into
 // the new pathtree.
-func getSizes(ctx context.Context, fsys ocfl.FS, root string, prev *Object, inv *ocflv1.Inventory) (map[string]int64, error) {
-	lastSizeV := 0
-	if prev != nil {
-		for _, v := range prev.Versions {
-			if v.HasSize && v.Num.Num() > lastSizeV {
-				lastSizeV = v.Num.Num() - 1
-			}
-		}
-	}
-	// versions to scan
-	toscan := inv.Head.AsHead()[lastSizeV:]
-	// map source files -> size
-	sizes := map[string]int64{}
-	for _, vnum := range toscan {
-		// This approach to scanning an object's content for file size information
-		// feels too low-level. It requires too much knowledge about the internal
-		// structure of an OCFL object. It would be nice for the ocflv1 package
-		// to provide an api that abstracts some of this.
-		prefix := path.Join(root, vnum.String(), inv.ContentDirectory)
-		fn := func(name string, dirent fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			name = strings.TrimPrefix(name, root+"/")
-			info, err := dirent.Info()
-			if err != nil {
-				return err
-			}
-			sizes[name] = info.Size()
-			return nil
-		}
-		if err := ocfl.EachFile(ctx, fsys, prefix, fn); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				// OK if content directory doesn't exist.. skip this version
-				continue
-			}
-			return nil, err
-		}
-	}
-	return sizes, nil
-}
+// func getSizes(ctx context.Context, fsys ocfl.FS, root string, prev *Object, inv *ocflv1.Inventory) (map[string]int64, error) {
+// 	lastSizeV := 0
+// 	if prev != nil {
+// 		for _, v := range prev.Versions {
+// 			if v.HasSize && v.Num.Num() > lastSizeV {
+// 				lastSizeV = v.Num.Num() - 1
+// 			}
+// 		}
+// 	}
+// 	// versions to scan
+// 	toscan := inv.Head.AsHead()[lastSizeV:]
+// 	// map source files -> size
+// 	sizes := map[string]int64{}
+// 	for _, vnum := range toscan {
+// 		// This approach to scanning an object's content for file size information
+// 		// feels too low-level. It requires too much knowledge about the internal
+// 		// structure of an OCFL object. It would be nice for the ocflv1 package
+// 		// to provide an api that abstracts some of this.
+// 		prefix := path.Join(root, vnum.String(), inv.ContentDirectory)
+// 		fn := func(name string, dirent fs.DirEntry, err error) error {
+// 			if err != nil {
+// 				return err
+// 			}
+// 			name = strings.TrimPrefix(name, root+"/")
+// 			info, err := dirent.Info()
+// 			if err != nil {
+// 				return err
+// 			}
+// 			sizes[name] = info.Size()
+// 			return nil
+// 		}
+// 		if err := ocfl.EachFile(ctx, fsys, prefix, fn); err != nil {
+// 			if errors.Is(err, fs.ErrNotExist) {
+// 				// OK if content directory doesn't exist.. skip this version
+// 				continue
+// 			}
+// 			return nil, err
+// 		}
+// 	}
+// 	return sizes, nil
+// }
