@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/bufbuild/connect-go"
@@ -33,7 +34,7 @@ func (srv Service) GetContent(ctx context.Context, rq *connect.Request[api.GetCo
 	if err != nil {
 		return err
 	}
-	f, err := srv.OpenFile(ctx, name)
+	f, err := srv.OpenFile(ctx, path.Join(srv.root, name))
 	if err != nil {
 		return err
 	}
@@ -242,7 +243,6 @@ func asGetObjectResponse(obj *Object) *connect.Response[api.GetObjectResponse] {
 	}
 	msg.Versions = make([]*api.GetObjectResponse_Version, len(obj.Versions))
 	for i, v := range obj.Versions {
-		v.Created.Year()
 		msg.Versions[i] = &api.GetObjectResponse_Version{
 			Num:     v.Num.String(),
 			Message: v.Message,

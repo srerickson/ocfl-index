@@ -10,7 +10,6 @@ import (
 
 func TestIndexingObject(t *testing.T) {
 	mk := mock.NewIndexingObject("test-inv",
-		index.ModeFileSizes,
 		mock.WithHead(ocfl.V(3)),
 		mock.BigDir("big", 1000),
 	)

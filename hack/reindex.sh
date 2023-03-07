@@ -17,7 +17,7 @@ export OCFL_INDEX_SQLITE="faker.sqlite"
 export OCFL_INDEX_SCANWORKERS=100
 
 # number of go routeins for inventory parse
-export OCFL_INDEX_PARSEWORKERS=6
+export OCFL_INDEX_PARSEWORKERS=24
 
 
 # Additional options:
@@ -32,4 +32,4 @@ export OCFL_INDEX_PARSEWORKERS=6
 # export AWS_S3_ENDPOINT
 
 # start server and index filesizes
-$($app server $@)
+$($app index $@)

@@ -4,4 +4,5 @@ testdata/minio/**
 !testdata/minio/simple-root/.gitkeep
 .tool-versions
 **/*.sqlite
+**/*.sqlite-journal
 fly.toml

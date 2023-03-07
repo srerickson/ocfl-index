@@ -17,9 +17,7 @@ import (
 
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/index"
-	"github.com/srerickson/ocfl-index/internal/pathtree"
 	"github.com/srerickson/ocfl-index/internal/sqlite/sqlc"
-	"github.com/srerickson/ocfl/digest"
 	"github.com/srerickson/ocfl/ocflv1"
 )
 
@@ -142,154 +140,15 @@ func (db *Backend) SetStoreIndexedAt(ctx context.Context) error {
 	return sqlc.New(&db.DB).SetStorageRootIndexed(ctx)
 }
 
-func (db *Backend) IndexObjectRoot(ctx context.Context, root string, idxAt time.Time) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting new transaction: %w", err)
-	}
-	defer tx.Rollback()
-	// always store indexed_at as URC
-	if _, err := db.indexObjectRootTx(ctx, sqlc.New(&db.DB).WithTx(tx), root, idxAt.UTC()); err != nil {
-		return fmt.Errorf("indexing object root: %w", err)
-
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing changes: %w", err)
-	}
-	return nil
-}
-
-func (db *Backend) IndexObjectInventory(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting new transaction: %w", err)
-	}
-	defer tx.Rollback()
-	rootrow, err := db.indexObjectRootTx(ctx, sqlc.New(&db.DB).WithTx(tx), root, idxAt)
-	if err != nil {
-		return fmt.Errorf("indexing object root: %w", err)
-	}
-	if err := db.indexInventoryTx(ctx, sqlc.New(&db.DB).WithTx(tx), rootrow, idxAt, inv, nil); err != nil {
-		return fmt.Errorf("indexing inventory: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing changes: %w", err)
-	}
-	return nil
-}
-
-func (db *Backend) IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting new transaction: %w", err)
-	}
-	defer tx.Rollback()
-	qryTx := sqlc.New(&db.DB).WithTx(tx)
-	rootrow, err := db.indexObjectRootTx(ctx, qryTx, root, idxAt)
-	if err != nil {
-		return fmt.Errorf("indexing object root: %w", err)
-	}
-	if sizes == nil {
-		sizes = make(map[string]int64)
-	}
-	// add existing file sizes to sizes
-	rows, err := qryTx.ListObjectContentSize(ctx, inv.ID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("geting existing file sizes from index: %w", err)
-	}
-	for _, r := range rows {
-		if _, ok := sizes[r.FilePath]; !ok {
-			sizes[r.FilePath] = r.Size.Int64
-		}
-	}
-	if err := db.indexInventoryTx(ctx, sqlc.New(&db.DB).WithTx(tx), rootrow, idxAt, inv, sizes); err != nil {
-		return fmt.Errorf("indexing inventory: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing changes: %w", err)
-	}
-	return nil
-}
-
-func (db *Backend) indexObjectRootTx(ctx context.Context, tx *sqlc.Queries, root string, idxAt time.Time) (int64, error) {
-	if root == "" {
-		return 0, fmt.Errorf("object root is required: %w", index.ErrInvalidArgs)
-	}
-	if idxAt.IsZero() {
-		idxAt = time.Now()
-	}
-	idxAt = idxAt.Truncate(time.Second).UTC()
-	idxobj, err := tx.UpsertObjectRoot(ctx, sqlc.UpsertObjectRootParams{
-		Path:      root,
-		IndexedAt: idxAt,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("upsert object root: %w", err)
-	}
-	return idxobj.ID, nil
-}
-
-// index the inventory. To index without filesize checks, sizes must be nil.
-func (db *Backend) indexInventoryTx(ctx context.Context, tx *sqlc.Queries, rootRow int64, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error {
-	idxInv, err := tx.UpsertInventory(ctx, sqlc.UpsertInventoryParams{
-		OcflID:          inv.ID,
-		RootID:          rootRow,
-		Head:            inv.Head.String(),
-		Spec:            inv.Type.Spec.String(),
-		DigestAlgorithm: inv.DigestAlgorithm,
-		InventoryDigest: inv.Digest(),
-	})
-	if err != nil {
-		return err
-	}
-	invrow := idxInv.ID
-	// versions table
-	for vnum, ver := range inv.Versions {
-		// sizes may be nil
-		tree, err := index.PathTree(inv, vnum, sizes)
-		if err != nil {
-			return fmt.Errorf("building tree from version state: %w", err)
-		}
-		if sizes != nil && !tree.Val.HasSize {
-			// the tree's root node should have size for entire version state
-			return fmt.Errorf("incomplete content file size information for '%s'", vnum)
-		}
-		nodeRow, err := addPathtreeNodes(ctx, tx, tree)
-		if err != nil {
-			return fmt.Errorf("indexing version state: %w", err)
-		}
-		if err := insertVersion(ctx, tx, vnum, ver, invrow, nodeRow); err != nil {
-			return fmt.Errorf("indexing inventory versions: %w", err)
-		}
-	}
-	// content paths
-	if err := insertContent(ctx, tx, inv.Manifest, invrow); err != nil {
-		return fmt.Errorf("indexing content files: %w", err)
-	}
-	return nil
-}
-
-// Remove all objects with indexed_at values older than before.
-func (db *Backend) RemoveObjectsBefore(ctx context.Context, indexedBefore time.Time) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting new transaction: %w", err)
-	}
-	qry := sqlc.New(db).WithTx(tx)
-	defer tx.Rollback()
-	// indexed_at is always UTC
-	if err := qry.DeleteObjectRootsBefore(ctx, indexedBefore.UTC()); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // List entries for object roots table
 func (db *Backend) ListObjectRoots(ctx context.Context, limit int, cursor string) (*index.ObjectRootList, error) {
+	return listObjectRootsTx(ctx, sqlc.New(db), limit, cursor)
+}
+
+func listObjectRootsTx(ctx context.Context, qry *sqlc.Queries, limit int, cursor string) (*index.ObjectRootList, error) {
 	if limit < 1 || limit > 1000 {
 		limit = 1000
 	}
-	qry := sqlc.New(db)
 	// add 1 to limit to see if there are more items
 	roots, err := qry.ListObjectRoots(ctx, sqlc.ListObjectRootsParams{Path: cursor, Limit: int64(limit + 1)})
 	if err != nil {
@@ -425,7 +284,7 @@ func (db *Backend) GetObject(ctx context.Context, objID string) (*index.Object, 
 			return nil, fmt.Errorf("object id '%s': %w", objID, index.ErrNotFound)
 		}
 	}
-	ret, err := db.asIndexInventory(ctx, (*sqlc.GetInventoryPathRow)(&obj))
+	ret, err := asIndexInventory(ctx, qry, (*sqlc.GetInventoryPathRow)(&obj))
 	if err != nil {
 		return nil, fmt.Errorf("while getting object id '%s': %w", objID, err)
 	}
@@ -433,23 +292,25 @@ func (db *Backend) GetObject(ctx context.Context, objID string) (*index.Object, 
 }
 
 func (db *Backend) GetObjectByPath(ctx context.Context, p string) (*index.Object, error) {
-	qry := sqlc.New(db)
-	obj, err := qry.GetInventoryPath(ctx, p)
+	return getObjectByPathTx(ctx, sqlc.New(db), p)
+}
+
+func getObjectByPathTx(ctx context.Context, tx *sqlc.Queries, p string) (*index.Object, error) {
+	obj, err := tx.GetInventoryPath(ctx, p)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("object path '%s': %w", p, index.ErrNotFound)
 		}
 		return nil, err
 	}
-	ret, err := db.asIndexInventory(ctx, &obj)
+	ret, err := asIndexInventory(ctx, tx, &obj)
 	if err != nil {
 		return nil, fmt.Errorf("while getting object path '%s': %w", p, err)
 	}
 	return ret, nil
 }
 
-func (db *Backend) asIndexInventory(ctx context.Context, sqlInv *sqlc.GetInventoryPathRow) (*index.Object, error) {
-	qry := sqlc.New(db)
+func asIndexInventory(ctx context.Context, qry *sqlc.Queries, sqlInv *sqlc.GetInventoryPathRow) (*index.Object, error) {
 	rows, err := qry.ListVersions(ctx, sqlInv.OcflID)
 	if err != nil {
 		return nil, err
@@ -631,188 +492,6 @@ func (db *Backend) existingTables(ctx context.Context) ([]string, error) {
 		}
 	}
 	return tables, nil
-}
-
-// addPathtreeNodes adds all values in the pathtree to the index, both names and nodes. It returns the
-// rows id for the node representing the tree's root
-func addPathtreeNodes(ctx context.Context, tx *sqlc.Queries, tree *pathtree.Node[index.IndexingVal]) (int64, error) {
-	return addPathtreeChild(ctx, tx, tree, 0, "")
-}
-
-// recursive implementation for addPathtree
-func addPathtreeChild(ctx context.Context, tx *sqlc.Queries, tree *pathtree.Node[index.IndexingVal], parentID int64, name string) (int64, error) {
-	nodeID, isNew, err := getSetNode(ctx, tx, tree.Val, tree.IsDir())
-	if err != nil {
-		return 0, err
-	}
-	if parentID != 0 {
-		// for non-root nodes, make sure name exists connecting parentID and nodeID
-		err = tx.InsertIgnoreName(ctx, sqlc.InsertIgnoreNameParams{
-			NodeID:   nodeID,
-			ParentID: parentID,
-			Name:     name,
-		})
-		if err != nil {
-			return 0, err
-		}
-	}
-	if !isNew {
-		// if getInserNode didn't create a new node, the children have already
-		// been created.
-		return nodeID, nil
-	}
-	for _, e := range tree.DirEntries() {
-		n := e.Name()
-		child := tree.Child(n)
-		if _, err = addPathtreeChild(ctx, tx, child, nodeID, n); err != nil {
-			return 0, err
-		}
-	}
-	return nodeID, nil
-}
-
-// getSetNode gets, inserts, and possibly updates the node for sum/dir,
-// returning the rowid and a boolean indicating if the node was created or
-// updated. An update only occurs in the case that val includes size information
-// but the indexed node does not.
-func getSetNode(ctx context.Context, qry *sqlc.Queries, val index.IndexingVal, isdir bool) (int64, bool, error) {
-	node, err := qry.GetNodeSum(ctx, sqlc.GetNodeSumParams{
-		Sum: val.Sum,
-		Dir: isdir,
-	})
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return 0, false, err
-		}
-		id, err := qry.InsertNode(ctx, sqlc.InsertNodeParams{
-			Size: sql.NullInt64{Int64: val.Size, Valid: val.HasSize},
-			Sum:  val.Sum,
-			Dir:  isdir,
-		})
-		if err != nil {
-			return 0, false, err
-		}
-		return id, true, nil
-	}
-	if val.HasSize && !node.Size.Valid {
-		// update node size when possible
-		qry.SetNodeSize(ctx, sqlc.SetNodeSizeParams{
-			Size: sql.NullInt64{Int64: val.Size, Valid: val.HasSize},
-			Sum:  val.Sum,
-			Dir:  isdir,
-		})
-	}
-	return node.ID, false, nil
-}
-
-// upsertInventory adds or updates a row in the inventories table as part object
-// indexing. It returns the inventory's internal rowid, a booleen indicating if
-// an insert or update occured, and an error value. If the inventory exists and
-// the InventoryDigest is unchanged, no changes are made and the returned
-// boolean is false.
-// func upsertInventory(ctx context.Context, qry *sqlc.Queries, obj *index.IndexingObject, objRow int64) (int64, bool, error) {
-// 	inv, err := qry.GetInventoryID(ctx, obj.Inventory.ID)
-// 	if err != nil {
-// 		if !errors.Is(err, sql.ErrNoRows) {
-// 			return 0, false, fmt.Errorf("get inventory: %w", err)
-// 		}
-// 		id, err := qry.InsertInventory(ctx, sqlc.InsertInventoryParams{
-// 			OcflID:          obj.Inventory.ID,
-// 			Head:            obj.Inventory.Head.String(),
-// 			Spec:            obj.Inventory.Type.Spec.String(),
-// 			DigestAlgorithm: obj.Inventory.DigestAlgorithm,
-// 			InventoryDigest: obj.Inventory.Digest(),
-// 			IndexedAt:       obj.IndexedAt,
-// 			RootID:          objRow,
-// 		})
-// 		if err != nil {
-// 			return 0, false, fmt.Errorf("inventory insert: %w", err)
-// 		}
-// 		return id, true, nil
-// 	}
-// 	if inv.InventoryDigest != obj.Inventory.Digest() {
-// 		err = qry.UpdateInventory(ctx, sqlc.UpdateInventoryParams{
-// 			ID:              inv.ID, // internal id
-// 			Head:            obj.Inventory.Head.String(),
-// 			Spec:            obj.Inventory.Type.Spec.String(),
-// 			DigestAlgorithm: obj.Inventory.DigestAlgorithm,
-// 			InventoryDigest: obj.Inventory.Digest(),
-// 			IndexedAt:       obj.IndexedAt,
-// 		})
-// 		if err != nil {
-// 			return 0, false, fmt.Errorf("inventory update: %w", err)
-// 		}
-// 		return inv.ID, true, nil
-// 	}
-// 	return inv.ID, false, nil
-// }
-
-// insertVersion adds a new row to the versions table as part of the object
-// indexing. invRow is the row id for the parent inventory, nodeID is the root
-// node for the version state. Currently, rows in the version table are never
-// updated. If a row exists for the version, an error is returned if indexed
-// values don't match those in the given version.
-func insertVersion(ctx context.Context, qry *sqlc.Queries, vnum ocfl.VNum, ver *ocflv1.Version, invRow int64, nodeID int64) error {
-	idxV, err := qry.GetVersion(ctx, sqlc.GetVersionParams{
-		InventoryID: invRow,
-		Num:         int64(vnum.Num()),
-	})
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		params := sqlc.InsertVersionParams{
-			InventoryID: invRow,
-			Name:        vnum.String(),
-			Message:     ver.Message,
-			Created:     ver.Created.UTC(), // location prevents errors reading from db
-			NodeID:      nodeID,
-		}
-		if ver.User != nil {
-			params.UserAddress = ver.User.Address
-			params.UserName = ver.User.Name
-		}
-		if _, err := qry.InsertVersion(ctx, params); err != nil {
-			return err
-		}
-		return nil
-	}
-	if idxV.NodeID != nodeID {
-		return fmt.Errorf("state for version '%s' has changed: %w", vnum, index.ErrIndexValue)
-	}
-	if idxV.Message != ver.Message {
-		return fmt.Errorf("message for version '%s' has changed: %w", vnum, index.ErrIndexValue)
-	}
-	if idxV.Created.Unix() != ver.Created.Unix() {
-		return fmt.Errorf("created timestamp for version '%s' has changed: %w", vnum, index.ErrIndexValue)
-	}
-	if ver.User != nil {
-		if idxV.UserAddress != ver.User.Address {
-			return fmt.Errorf("user address for version '%s' has changed: %w", vnum, index.ErrIndexValue)
-		}
-		if idxV.UserName != ver.User.Name {
-			return fmt.Errorf("user name for version '%s' has changed: %w", vnum, index.ErrIndexValue)
-		}
-	}
-	return nil
-}
-
-func insertContent(ctx context.Context, tx *sqlc.Queries, man *digest.Map, invID int64) error {
-	return man.EachPath(func(name, digest string) error {
-		sum, err := hex.DecodeString(digest)
-		if err != nil {
-			return err
-		}
-		params := sqlc.InsertIgnoreContentPathParams{
-			Sum:         sum,
-			FilePath:    name,
-			InventoryID: invID,
-		}
-		if err := tx.InsertIgnoreContentPath(ctx, params); err != nil {
-			return fmt.Errorf("adding content path: '%s'", name)
-		}
-		return nil
-	})
 }
 
 func parseCursor(cursor string) (string, time.Time, error) {
