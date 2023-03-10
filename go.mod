@@ -7,6 +7,7 @@ require (
 	github.com/bufbuild/connect-go v1.4.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-logr/logr v1.2.3
+	github.com/go-logr/stdr v1.2.2
 	github.com/iand/logfmtr v0.2.1
 	github.com/spf13/cobra v1.6.1
 	github.com/srerickson/ocfl v0.0.14

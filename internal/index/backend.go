@@ -39,6 +39,7 @@ type Backend interface {
 	// IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error
 
 	// ListObjectRoots is used to iterate over the object root directories in the index.
+	// Paths in the returned list are relative to the storage root.
 	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
 
 	// All OCFL Object in the index

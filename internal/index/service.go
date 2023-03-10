@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/srerickson/ocfl"
@@ -23,42 +25,33 @@ const downloadPrefix = "/download"
 
 // Service implements the gRPC services
 type Service struct {
-	*Index
+	Log       logr.Logger
+	FS        ocfl.FS
+	RootPath  string
+	Index     *Index
+	Async     *Async
+	ParseConc int
+	ScanConc  int
 }
 
 // Service implements the service generated with connect-go
 var _ (ocflv0connect.IndexServiceHandler) = (*Service)(nil)
 
-func (srv Service) GetContent(ctx context.Context, rq *connect.Request[api.GetContentRequest], stream *connect.ServerStream[api.GetContentResponse]) error {
-	name, err := srv.Index.GetContentPath(ctx, rq.Msg.Digest)
-	if err != nil {
+func (srv Service) Reindex(ctx context.Context, rq *connect.Request[api.ReindexRequest], stream *connect.ServerStream[api.ReindexResponse]) error {
+	task := func(ctx context.Context, w io.Writer) error {
+		opts := &ReindexOptions{
+			FS:        srv.FS,
+			RootPath:  srv.RootPath,
+			ParseConc: srv.ParseConc,
+			ScanConc:  srv.ScanConc,
+			Log:       stdr.New(log.New(w, "", 0)),
+		}
+		return srv.Index.Reindex(ctx, opts)
+	}
+	if err := srv.Async.TryNow("indexing", task); err != nil {
 		return err
 	}
-	f, err := srv.OpenFile(ctx, path.Join(srv.root, name))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	buff := make([]byte, 1024*64)
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		n, err := f.Read(buff)
-		if n > 0 {
-			msg := &api.GetContentResponse{Data: buff[:n]}
-			if stream.Send(msg); err != nil {
-				return err
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return srv.Async.monitor.Handle(ctx, rq, stream)
 }
 
 func (srv Service) GetSummary(ctx context.Context, _ *connect.Request[api.GetSummaryRequest]) (*connect.Response[api.GetSummaryResponse], error) {
@@ -105,8 +98,9 @@ func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObj
 // HTTPHandler returns new http.Handler for the index service
 func (srv Service) HTTPHandler() http.Handler {
 	mux := chi.NewRouter()
-	mux.Use(RequestLogger(srv.log))
+	mux.Use(RequestLogger(srv.Log))
 	mux.Mount(ocflv0connect.NewIndexServiceHandler(srv))
+	mux.Get(downloadPrefix+"/{sum}", srv.downloadHandler())
 	mux.Get(downloadPrefix+"/{sum}/{name}", srv.downloadHandler())
 	return mux
 }
@@ -131,6 +125,7 @@ func RequestLogger(logger logr.Logger) func(http.Handler) http.Handler {
 
 func (srv Service) downloadHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		sum := chi.URLParam(r, "sum")
 		if sum == "" {
 			http.NotFound(w, r)
@@ -138,24 +133,24 @@ func (srv Service) downloadHandler() func(http.ResponseWriter, *http.Request) {
 		}
 		name := chi.URLParam(r, "name")
 		if name == "" {
-			http.NotFound(w, r)
-			return
+			name = sum
 		}
-		p, err := srv.Index.GetContentPath(r.Context(), sum)
+		p, err := srv.Index.GetContentPath(ctx, sum)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		f, err := srv.Index.OpenFile(r.Context(), p)
+		f, err := srv.FS.OpenFile(ctx, path.Join(srv.RootPath, p))
 		if err != nil {
-			panic(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 		defer f.Close()
 		if _, err = io.Copy(w, f); err != nil {
-			panic(err) // FIXME
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-
 	}
 }
 

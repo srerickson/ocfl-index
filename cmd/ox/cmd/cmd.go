@@ -8,14 +8,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/export"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/ls"
+	"github.com/srerickson/ocfl-index/cmd/ox/cmd/reindex"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/root"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/status"
 )
 
 var rootCmd = root.Cmd{
 	Command: cobra.Command{
-		Use:   "ox {command}",
-		Short: "ocfl-index client",
+		Use:          "ox {command}",
+		Short:        "ocfl-index client",
+		SilenceUsage: true,
 	},
 	Log: defaultLogger(),
 }
@@ -26,6 +28,7 @@ func Execute() {
 		&status.Cmd{},
 		&ls.Cmd{},
 		&export.Cmd{},
+		&reindex.Cmd{},
 	)
 	err := rootCmd.Execute()
 	if err != nil {

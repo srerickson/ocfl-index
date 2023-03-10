@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/bufbuild/connect-go"
@@ -101,7 +100,6 @@ func (exp *Cmd) Run(ctx context.Context, args []string) error {
 			return exportCanceled(err)
 		}
 	}
-	exp.root.Log.Info("copying files", "num", len(copies))
 	htcl := exp.root.HTTPClient()
 	// base http for file transfer
 	for dst, src := range copies {
@@ -143,7 +141,7 @@ func (exp *Cmd) getFullObjectState(ctx context.Context, src string) (*ocflv0.Get
 }
 
 func exportCanceled(err error) error {
-	return fmt.Errorf("copy canceled: %w", err)
+	return fmt.Errorf("export canceled: %w", err)
 }
 
 type dstMode int
@@ -174,7 +172,7 @@ func statDst(dst string) (dstMode, error) {
 }
 
 func (exp *Cmd) download(htcl *http.Client, src srcFile, dst string) error {
-	exp.root.Log.Info("exporting", "src", src.name, "to", dst)
+	exp.root.Log.Info("copying", "src", src.name, "to", dst)
 	if err := os.MkdirAll(filepath.Dir(dst), newDirMode); err != nil {
 		return err
 	}
@@ -183,7 +181,8 @@ func (exp *Cmd) download(htcl *http.Client, src srcFile, dst string) error {
 		return err
 	}
 	defer f.Close()
-	dlurl, err := url.JoinPath(exp.root.RemoteURL, "download", src.sum, path.Base(src.name))
+	dlurl, err := url.JoinPath(exp.root.RemoteURL, "download", src.sum)
+	//dlurl, err := url.JoinPath(exp.root.RemoteURL, "download", src.sum, path.Base(src.name))
 	if err != nil {
 		return err
 	}

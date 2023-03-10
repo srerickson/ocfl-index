@@ -4,17 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
-	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/pipeline"
+	"github.com/srerickson/ocfl/backend/cloud"
 	"github.com/srerickson/ocfl/ocflv1"
+	"gocloud.dev/blob"
 )
 
-const txCapInv = 10
+const txCapInv = 10       // number of inventory inserts per transaction
+const txCapObjRoot = 1000 // number of object root inserts transaction
 
 // set during with build with
 // -ldflags -X 'github.com/srerickson/ocfl-index/internal/index.Version=v0.0.X'
@@ -27,63 +31,162 @@ var ErrIndexValue = errors.New("unexpected value in index, possible corruption")
 
 // Index provides indexing for an OCFL Storage Root
 type Index struct {
-	Backend          // index database
-	ocfl.FS          // storage root fs
-	root      string // storage root directory
-	scanConc  int
-	parseConc int
-	log       logr.Logger
-	store     *ocflv1.Store
+	Backend
 }
 
-// NewIndex returns a new Index for OCFL storage root at root in fsys. An indexing
-// backend implementation (currently, sqlite) is also required.
-func NewIndex(db Backend, fsys ocfl.FS, root string, opts ...Option) *Index {
-	numcpu := runtime.NumCPU()
-	idx := &Index{
-		Backend:   db,
-		FS:        fsys,
-		root:      root,
-		scanConc:  numcpu,
-		parseConc: numcpu,
-		log:       logr.Discard(),
-	}
-	for _, o := range opts {
-		o(idx)
-	}
-	return idx
+type ReindexOptions struct {
+	FS        ocfl.FS // storage root fs
+	RootPath  string  // storage root directory
+	ScanConc  int     // concurrency for readdir-based object scanning
+	ParseConc int     // concurrency for inventory parsers
+	Log       logr.Logger
 }
 
-// Option is used by NewIndex to configure the Index
-type Option func(*Index)
-
-func WithObjectScanConc(c int) Option {
-	return func(opt *Index) {
-		opt.scanConc = c
+// Reindex is updates the index database
+func (idx *Index) Reindex(ctx context.Context, opts *ReindexOptions) error {
+	if opts.Log.GetSink() == nil {
+		opts.Log = logr.Discard()
 	}
+	if err := idx.indexObjectRoots(ctx, opts); err != nil {
+		return fmt.Errorf("updating the object path index: %w", err)
+	}
+	if err := idx.IndexInventories(ctx, opts); err != nil {
+		return fmt.Errorf("indexing inventories index: %w", err)
+	}
+	return nil
 }
 
-func WithInventoryParseConc(c int) Option {
-	return func(opt *Index) {
-		opt.parseConc = c
+// indexObjectRoots scans the storage root for object root directories, adds them
+// to the index (updated indexed_at for any existing entries), and removes any
+// object roots in the index that no longer exist in the storage root.
+func (idx *Index) indexObjectRoots(ctx context.Context, opts *ReindexOptions) error {
+	count := 0
+	method := "default"
+	var err error
+	opts.Log.Info("updating object paths from storage root. This may take a while ...", "root", opts.RootPath)
+	defer func() {
+		opts.Log.Info("object path update complete", "object_roots", count, "method", method, "root", opts.RootPath)
+	}()
+	startSync := time.Now()
+	switch fsys := opts.FS.(type) {
+	case *cloud.FS:
+		method = "list-keys"
+		count, err = cloudSyncObjecRoots(ctx, idx.Backend, fsys, opts.RootPath)
+	default:
+		method = "default"
+		count, err = defaultSyncObjecRoots(ctx, idx.Backend, opts.FS, opts.RootPath, opts.ScanConc)
 	}
-}
-
-func WithLogger(l logr.Logger) Option {
-	return func(opt *Index) {
-		opt.log = l
-	}
-}
-
-func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
-	store, err := ocflv1.GetStore(ctx, idx.FS, idx.root)
 	if err != nil {
 		return err
 	}
-	idx.store = store
+	tx, err := idx.Backend.NewTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := tx.RemoveObjectsBefore(ctx, startSync); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func defaultSyncObjecRoots(ctx context.Context, db Backend, fsys ocfl.FS, root string, conc int) (int, error) {
+	store, err := ocflv1.GetStore(ctx, fsys, root)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := db.NewTx(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	found := 0
+	eachObj := func(obj *ocflv1.Object) error {
+		_, root := obj.Root()
+		// The indexed object root path should be relatvive to the storage root
+		r := ObjectRoot{Path: strings.TrimPrefix(root, root+"/")}
+		if err := tx.IndexObjectRoot(ctx, time.Now(), r); err != nil {
+			return err
+		}
+		found++
+		if found%txCapObjRoot == 0 {
+			// commit and start a new transaction
+			if err := tx.Commit(); err != nil {
+				return err
+			}
+			tx, err = db.NewTx(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := store.ScanObjects(ctx, eachObj, &ocflv1.ScanObjectsOpts{Concurrency: conc}); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return found, nil
+}
+
+func cloudSyncObjecRoots(ctx context.Context, db Backend, fsys *cloud.FS, root string) (int, error) {
+	iter := fsys.List(&blob.ListOptions{
+		Prefix: root,
+	})
+	tx, err := db.NewTx(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	found := 0
+	var decl ocfl.Declaration
+	for {
+		item, err := iter.Next(ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return 0, err
+		}
+		if err := ocfl.ParseDeclaration(path.Base(item.Key), &decl); err != nil {
+			continue
+		}
+		if decl.Type != ocfl.DeclObject {
+			continue
+		}
+		// item key's directory is an object root: index the path relative to the
+		// storage root.
+		objRoot := strings.TrimPrefix(path.Dir(item.Key), root+"/")
+		if err := tx.IndexObjectRoot(ctx, time.Now(), ObjectRoot{Path: objRoot}); err != nil {
+			return 0, err
+		}
+		found++
+		if found%txCapObjRoot == 0 {
+			// commit and start a new transaction
+			if err := tx.Commit(); err != nil {
+				return 0, err
+			}
+			tx, err = db.NewTx(ctx)
+			if err != nil {
+				return found, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return found, err
+	}
+	return found, nil
+}
+
+func (idx *Index) IndexInventories(ctx context.Context, opts *ReindexOptions) error {
+	store, err := ocflv1.GetStore(ctx, opts.FS, opts.RootPath)
+	if err != nil {
+		return err
+	}
 	// store the storage root's info in the database -- do we need to do this?
 	// Why not just keep the values in idx?
-	if err := idx.SetStoreInfo(ctx, idx.root, store.Description(), store.Spec()); err != nil {
+	if err := idx.SetStoreInfo(ctx, opts.RootPath, store.Description(), store.Spec()); err != nil {
 		return err
 	}
 	// txCh is used to share the database transcation across multiple go
@@ -102,7 +205,7 @@ func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
 		}
 		txCh <- tx
 	}
-	idx.log.Info("indexing inventories ...", "path", idx.root, "inventory_workers", idx.parseConc)
+	opts.Log.Info("indexing inventories ...", "path", opts.RootPath, "inventory_workers", opts.ParseConc)
 	numObjs := 0
 	// three-phase pipeline for indexing: scan for object roots; parse
 	// inventories; do indexing.
@@ -129,11 +232,17 @@ func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
 		return nil
 	}
 	// parse inventories function (run in multiple go routines)
-	parse := func(root string) (*indexJob, error) {
-		job, err := idx.newIndexJob(ctx, root, txCh)
-		if err != nil {
-			return nil, fmt.Errorf("preparing to index '%s': %w", root, err)
+	parse := func(objPath string) (*indexJob, error) {
+		// objPath is relative to the storage root
+		tx := <-txCh
+		prev, err := tx.GetObjectByPath(ctx, objPath)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			txCh <- tx
+			return nil, err
 		}
+		txCh <- tx
+		invPath := path.Join(opts.RootPath, objPath)
+		job := newIndexJob(ctx, prev, opts.FS, invPath)
 		return job, nil
 	}
 	// index update function (single go routine)
@@ -170,7 +279,7 @@ func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
 		}
 		return nil
 	}
-	if err := pipeline.Run(scan, parse, index, idx.parseConc); err != nil {
+	if err := pipeline.Run(scan, parse, index, opts.ParseConc); err != nil {
 		return fmt.Errorf("during indexing: %w", err)
 	}
 	{
@@ -182,83 +291,30 @@ func (idx *Index) IndexInventories(ctx context.Context, paths ...string) error {
 		}
 		txCh <- tx
 	}
-	idx.log.Info("indexing complete", "path", idx.root, "new_updated", numObjs)
+	opts.Log.Info("indexing complete", "path", opts.RootPath, "new_updated", numObjs)
 	return nil
 }
 
 type indexJob struct {
 	sidecar string
 	inv     *ocflv1.Inventory
-	prev    *Object // previous indexed value
+	prev    *Object // existing index entry
+	err     error   // error during inventory parse
 }
 
-func (idx *Index) newIndexJob(ctx context.Context, root string, txCh chan BackendTx) (*indexJob, error) {
-	var job indexJob
-	var err error
-	invPath := path.Join(idx.root, root, "inventory.json")
-	inv, vErrs := ocflv1.ValidateInventory(ctx, idx, invPath, nil)
+func newIndexJob(ctx context.Context, prev *Object, fsys ocfl.FS, invDir string) *indexJob {
+	// TODO: read sidecar for object and compare to avoid reading inventory unnecessarily.
+	// if prev != nil {
+	// }
+	job := &indexJob{prev: prev}
+	invPath := path.Join(invDir, "inventory.json")
+	inv, vErrs := ocflv1.ValidateInventory(ctx, fsys, invPath, nil)
 	if err := vErrs.Err(); err != nil {
 		// don't quit if the inventory has errors
-		idx.log.Error(err, "inventory has errors", "path", invPath)
-		return &job, nil
+		job.err = err
+		return job
 	}
 	job.inv = inv
 	job.sidecar = inv.Digest()
-	tx := <-txCh
-	defer func() {
-		txCh <- tx
-	}()
-	job.prev, err = tx.GetObjectByPath(ctx, root)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, fmt.Errorf("getting previously indexed object for path='%s': %w", root, err)
-	}
-	return &job, nil
+	return job
 }
-
-// build FileSizes list. If available, use size information from prev to figure
-// out new version content directories that need to be scanned. If we only scan
-// the content files for the later versions, and the version state refers to
-// files from a previous version, we will have partial size information for that
-// version... need to figure out how to merge the existing size information into
-// the new pathtree.
-// func getSizes(ctx context.Context, fsys ocfl.FS, root string, prev *Object, inv *ocflv1.Inventory) (map[string]int64, error) {
-// 	lastSizeV := 0
-// 	if prev != nil {
-// 		for _, v := range prev.Versions {
-// 			if v.HasSize && v.Num.Num() > lastSizeV {
-// 				lastSizeV = v.Num.Num() - 1
-// 			}
-// 		}
-// 	}
-// 	// versions to scan
-// 	toscan := inv.Head.AsHead()[lastSizeV:]
-// 	// map source files -> size
-// 	sizes := map[string]int64{}
-// 	for _, vnum := range toscan {
-// 		// This approach to scanning an object's content for file size information
-// 		// feels too low-level. It requires too much knowledge about the internal
-// 		// structure of an OCFL object. It would be nice for the ocflv1 package
-// 		// to provide an api that abstracts some of this.
-// 		prefix := path.Join(root, vnum.String(), inv.ContentDirectory)
-// 		fn := func(name string, dirent fs.DirEntry, err error) error {
-// 			if err != nil {
-// 				return err
-// 			}
-// 			name = strings.TrimPrefix(name, root+"/")
-// 			info, err := dirent.Info()
-// 			if err != nil {
-// 				return err
-// 			}
-// 			sizes[name] = info.Size()
-// 			return nil
-// 		}
-// 		if err := ocfl.EachFile(ctx, fsys, prefix, fn); err != nil {
-// 			if errors.Is(err, fs.ErrNotExist) {
-// 				// OK if content directory doesn't exist.. skip this version
-// 				continue
-// 			}
-// 			return nil, err
-// 		}
-// 	}
-// 	return sizes, nil
-// }
