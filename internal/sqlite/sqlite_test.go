@@ -34,7 +34,7 @@ func TestInitSchema(t *testing.T) {
 
 func TestSummary(t *testing.T) {
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx)
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	defer idx.Close()
 	tx, err := idx.NewTx(ctx)
@@ -68,7 +68,7 @@ func TestIndexObject(t *testing.T) {
 	// - index inventory with head=v1, head=v2 (same no file size)
 	// - index inventory (head=1), then index file sizes (v2)
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx)
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	tx, err := idx.NewTx(ctx)
 	expNil(t, err)
@@ -129,7 +129,7 @@ func compareInventory(t *testing.T, idxInv sqlc.OcflIndexInventory, idxVers []sq
 
 func TestListObjectRoot(t *testing.T) {
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx)
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	defer idx.Close()
 	tx, err := idx.NewTx(ctx)
@@ -162,7 +162,7 @@ func TestListObjectRoot(t *testing.T) {
 
 func TestRemoveObjectsBefore(t *testing.T) {
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx)
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	defer idx.Close()
 	tx, err := idx.NewTx(ctx)
@@ -286,7 +286,7 @@ func TestListObjects(t *testing.T) {
 
 func TestGetObjectState(t *testing.T) {
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx)
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	defer idx.Close()
 	tx, err := idx.NewTx(ctx)
@@ -335,8 +335,9 @@ func TestGetObjectState(t *testing.T) {
 	}
 }
 
-func newSqliteIndex(ctx context.Context) (*sqlite.Backend, error) {
-	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")
+func newSqliteIndex(ctx context.Context, name string) (*sqlite.Backend, error) {
+	con := fmt.Sprintf("file:%s?mode=memory&_busy_timeout=10000&_journal=WAL&_sync=NORMAL&cache=shared", name)
+	idx, err := sqlite.Open(con)
 	if err != nil {
 		return nil, err
 	}

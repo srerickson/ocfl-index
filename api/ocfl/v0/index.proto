@@ -8,9 +8,13 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/srerickson/ocfl-index/gen/ocfl/v0;ocflv0";
 
 service IndexService {
+
   // Basic info on the storage root & index status.
   rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse) {}
-  
+
+    // Start a reindex process to scan the storage and ingest object inventories.
+  rpc Reindex(ReindexRequest) returns (stream ReindexResponse) {}
+
   // OCFL Objects in the index
   rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse) {}
   
@@ -19,9 +23,12 @@ service IndexService {
   
   // Query the logical state of an OCFL object version
   rpc GetObjectState(GetObjectStateRequest) returns (GetObjectStateResponse) {}
+}
 
-  // Download byte stream for content (based on digest)
-  rpc GetContent(GetContentRequest) returns (stream GetContentResponse){}
+message ReindexRequest{}
+
+message ReindexResponse{
+  string log_message = 1;
 }
 
 message GetSummaryRequest {}
@@ -138,12 +145,3 @@ message GetObjectStateResponse {
   // token for next page of results
   string next_page_token = 6;
 }
-
-message GetContentRequest{
-  string digest = 1;
-}
-message GetContentResponse{
-  bytes data = 1;
-}
-
-

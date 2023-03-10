@@ -17,14 +17,14 @@ module Ocfl
 
         # Basic info on the storage root & index status.
         rpc :GetSummary, ::Ocfl::V0::GetSummaryRequest, ::Ocfl::V0::GetSummaryResponse
+        # Start a reindex process to scan the storage and ingest object inventories.
+        rpc :Reindex, ::Ocfl::V0::ReindexRequest, stream(::Ocfl::V0::ReindexResponse)
         # OCFL Objects in the index
         rpc :ListObjects, ::Ocfl::V0::ListObjectsRequest, ::Ocfl::V0::ListObjectsResponse
         # Details on a specific OCFL object in the index 
         rpc :GetObject, ::Ocfl::V0::GetObjectRequest, ::Ocfl::V0::GetObjectResponse
         # Query the logical state of an OCFL object version
         rpc :GetObjectState, ::Ocfl::V0::GetObjectStateRequest, ::Ocfl::V0::GetObjectStateResponse
-        # Download byte stream for content (based on digest)
-        rpc :GetContent, ::Ocfl::V0::GetContentRequest, stream(::Ocfl::V0::GetContentResponse)
       end
 
       Stub = Service.rpc_stub_class

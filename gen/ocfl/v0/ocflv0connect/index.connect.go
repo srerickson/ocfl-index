@@ -29,14 +29,14 @@ const (
 type IndexServiceClient interface {
 	// Basic info on the storage root & index status.
 	GetSummary(context.Context, *connect_go.Request[v0.GetSummaryRequest]) (*connect_go.Response[v0.GetSummaryResponse], error)
+	// Start a reindex process to scan the storage and ingest object inventories.
+	Reindex(context.Context, *connect_go.Request[v0.ReindexRequest]) (*connect_go.ServerStreamForClient[v0.ReindexResponse], error)
 	// OCFL Objects in the index
 	ListObjects(context.Context, *connect_go.Request[v0.ListObjectsRequest]) (*connect_go.Response[v0.ListObjectsResponse], error)
 	// Details on a specific OCFL object in the index
 	GetObject(context.Context, *connect_go.Request[v0.GetObjectRequest]) (*connect_go.Response[v0.GetObjectResponse], error)
 	// Query the logical state of an OCFL object version
 	GetObjectState(context.Context, *connect_go.Request[v0.GetObjectStateRequest]) (*connect_go.Response[v0.GetObjectStateResponse], error)
-	// Download byte stream for content (based on digest)
-	GetContent(context.Context, *connect_go.Request[v0.GetContentRequest]) (*connect_go.ServerStreamForClient[v0.GetContentResponse], error)
 }
 
 // NewIndexServiceClient constructs a client for the ocfl.v0.IndexService service. By default, it
@@ -54,6 +54,11 @@ func NewIndexServiceClient(httpClient connect_go.HTTPClient, baseURL string, opt
 			baseURL+"/ocfl.v0.IndexService/GetSummary",
 			opts...,
 		),
+		reindex: connect_go.NewClient[v0.ReindexRequest, v0.ReindexResponse](
+			httpClient,
+			baseURL+"/ocfl.v0.IndexService/Reindex",
+			opts...,
+		),
 		listObjects: connect_go.NewClient[v0.ListObjectsRequest, v0.ListObjectsResponse](
 			httpClient,
 			baseURL+"/ocfl.v0.IndexService/ListObjects",
@@ -69,26 +74,26 @@ func NewIndexServiceClient(httpClient connect_go.HTTPClient, baseURL string, opt
 			baseURL+"/ocfl.v0.IndexService/GetObjectState",
 			opts...,
 		),
-		getContent: connect_go.NewClient[v0.GetContentRequest, v0.GetContentResponse](
-			httpClient,
-			baseURL+"/ocfl.v0.IndexService/GetContent",
-			opts...,
-		),
 	}
 }
 
 // indexServiceClient implements IndexServiceClient.
 type indexServiceClient struct {
 	getSummary     *connect_go.Client[v0.GetSummaryRequest, v0.GetSummaryResponse]
+	reindex        *connect_go.Client[v0.ReindexRequest, v0.ReindexResponse]
 	listObjects    *connect_go.Client[v0.ListObjectsRequest, v0.ListObjectsResponse]
 	getObject      *connect_go.Client[v0.GetObjectRequest, v0.GetObjectResponse]
 	getObjectState *connect_go.Client[v0.GetObjectStateRequest, v0.GetObjectStateResponse]
-	getContent     *connect_go.Client[v0.GetContentRequest, v0.GetContentResponse]
 }
 
 // GetSummary calls ocfl.v0.IndexService.GetSummary.
 func (c *indexServiceClient) GetSummary(ctx context.Context, req *connect_go.Request[v0.GetSummaryRequest]) (*connect_go.Response[v0.GetSummaryResponse], error) {
 	return c.getSummary.CallUnary(ctx, req)
+}
+
+// Reindex calls ocfl.v0.IndexService.Reindex.
+func (c *indexServiceClient) Reindex(ctx context.Context, req *connect_go.Request[v0.ReindexRequest]) (*connect_go.ServerStreamForClient[v0.ReindexResponse], error) {
+	return c.reindex.CallServerStream(ctx, req)
 }
 
 // ListObjects calls ocfl.v0.IndexService.ListObjects.
@@ -106,23 +111,18 @@ func (c *indexServiceClient) GetObjectState(ctx context.Context, req *connect_go
 	return c.getObjectState.CallUnary(ctx, req)
 }
 
-// GetContent calls ocfl.v0.IndexService.GetContent.
-func (c *indexServiceClient) GetContent(ctx context.Context, req *connect_go.Request[v0.GetContentRequest]) (*connect_go.ServerStreamForClient[v0.GetContentResponse], error) {
-	return c.getContent.CallServerStream(ctx, req)
-}
-
 // IndexServiceHandler is an implementation of the ocfl.v0.IndexService service.
 type IndexServiceHandler interface {
 	// Basic info on the storage root & index status.
 	GetSummary(context.Context, *connect_go.Request[v0.GetSummaryRequest]) (*connect_go.Response[v0.GetSummaryResponse], error)
+	// Start a reindex process to scan the storage and ingest object inventories.
+	Reindex(context.Context, *connect_go.Request[v0.ReindexRequest], *connect_go.ServerStream[v0.ReindexResponse]) error
 	// OCFL Objects in the index
 	ListObjects(context.Context, *connect_go.Request[v0.ListObjectsRequest]) (*connect_go.Response[v0.ListObjectsResponse], error)
 	// Details on a specific OCFL object in the index
 	GetObject(context.Context, *connect_go.Request[v0.GetObjectRequest]) (*connect_go.Response[v0.GetObjectResponse], error)
 	// Query the logical state of an OCFL object version
 	GetObjectState(context.Context, *connect_go.Request[v0.GetObjectStateRequest]) (*connect_go.Response[v0.GetObjectStateResponse], error)
-	// Download byte stream for content (based on digest)
-	GetContent(context.Context, *connect_go.Request[v0.GetContentRequest], *connect_go.ServerStream[v0.GetContentResponse]) error
 }
 
 // NewIndexServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -135,6 +135,11 @@ func NewIndexServiceHandler(svc IndexServiceHandler, opts ...connect_go.HandlerO
 	mux.Handle("/ocfl.v0.IndexService/GetSummary", connect_go.NewUnaryHandler(
 		"/ocfl.v0.IndexService/GetSummary",
 		svc.GetSummary,
+		opts...,
+	))
+	mux.Handle("/ocfl.v0.IndexService/Reindex", connect_go.NewServerStreamHandler(
+		"/ocfl.v0.IndexService/Reindex",
+		svc.Reindex,
 		opts...,
 	))
 	mux.Handle("/ocfl.v0.IndexService/ListObjects", connect_go.NewUnaryHandler(
@@ -152,11 +157,6 @@ func NewIndexServiceHandler(svc IndexServiceHandler, opts ...connect_go.HandlerO
 		svc.GetObjectState,
 		opts...,
 	))
-	mux.Handle("/ocfl.v0.IndexService/GetContent", connect_go.NewServerStreamHandler(
-		"/ocfl.v0.IndexService/GetContent",
-		svc.GetContent,
-		opts...,
-	))
 	return "/ocfl.v0.IndexService/", mux
 }
 
@@ -165,6 +165,10 @@ type UnimplementedIndexServiceHandler struct{}
 
 func (UnimplementedIndexServiceHandler) GetSummary(context.Context, *connect_go.Request[v0.GetSummaryRequest]) (*connect_go.Response[v0.GetSummaryResponse], error) {
 	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v0.IndexService.GetSummary is not implemented"))
+}
+
+func (UnimplementedIndexServiceHandler) Reindex(context.Context, *connect_go.Request[v0.ReindexRequest], *connect_go.ServerStream[v0.ReindexResponse]) error {
+	return connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v0.IndexService.Reindex is not implemented"))
 }
 
 func (UnimplementedIndexServiceHandler) ListObjects(context.Context, *connect_go.Request[v0.ListObjectsRequest]) (*connect_go.Response[v0.ListObjectsResponse], error) {
@@ -177,8 +181,4 @@ func (UnimplementedIndexServiceHandler) GetObject(context.Context, *connect_go.R
 
 func (UnimplementedIndexServiceHandler) GetObjectState(context.Context, *connect_go.Request[v0.GetObjectStateRequest]) (*connect_go.Response[v0.GetObjectStateResponse], error) {
 	return nil, connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v0.IndexService.GetObjectState is not implemented"))
-}
-
-func (UnimplementedIndexServiceHandler) GetContent(context.Context, *connect_go.Request[v0.GetContentRequest], *connect_go.ServerStream[v0.GetContentResponse]) error {
-	return connect_go.NewError(connect_go.CodeUnimplemented, errors.New("ocfl.v0.IndexService.GetContent is not implemented"))
 }

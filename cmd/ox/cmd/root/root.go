@@ -7,7 +7,6 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -57,7 +56,7 @@ func (ox *Cmd) AddSub(subs ...OxCmd) {
 func (ox *Cmd) HTTPClient() *http.Client {
 	if ox.httpClient == nil {
 		ox.httpClient = &http.Client{
-			Timeout: 20 * time.Second,
+			// Timeout: 20 * time.Second,
 		}
 	}
 	return ox.httpClient

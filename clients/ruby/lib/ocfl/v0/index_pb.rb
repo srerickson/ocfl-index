@@ -7,6 +7,11 @@ require 'google/protobuf/timestamp_pb'
 
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_file("ocfl/v0/index.proto", :syntax => :proto3) do
+    add_message "ocfl.v0.ReindexRequest" do
+    end
+    add_message "ocfl.v0.ReindexResponse" do
+      optional :log_message, :string, 1, json_name: "logMessage"
+    end
     add_message "ocfl.v0.GetSummaryRequest" do
     end
     add_message "ocfl.v0.GetSummaryResponse" do
@@ -91,17 +96,13 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
       optional :has_size, :bool, 4, json_name: "hasSize"
       optional :digest, :string, 5, json_name: "digest"
     end
-    add_message "ocfl.v0.GetContentRequest" do
-      optional :digest, :string, 1, json_name: "digest"
-    end
-    add_message "ocfl.v0.GetContentResponse" do
-      optional :data, :bytes, 1, json_name: "data"
-    end
   end
 end
 
 module Ocfl
   module V0
+    ReindexRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ReindexRequest").msgclass
+    ReindexResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ReindexResponse").msgclass
     GetSummaryRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetSummaryRequest").msgclass
     GetSummaryResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetSummaryResponse").msgclass
     ListObjectsRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ListObjectsRequest").msgclass
@@ -117,7 +118,5 @@ module Ocfl
     GetObjectStateRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetObjectStateRequest").msgclass
     GetObjectStateResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetObjectStateResponse").msgclass
     GetObjectStateResponse::Item = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetObjectStateResponse.Item").msgclass
-    GetContentRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetContentRequest").msgclass
-    GetContentResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetContentResponse").msgclass
   end
 end

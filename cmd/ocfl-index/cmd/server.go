@@ -48,7 +48,6 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	serveCmd.Flags().BoolVar(&serverFlags.skipIndexing, "skip-indexing", false, "skip indexing step on startup")
 	serveCmd.Flags().BoolVar(&serverFlags.inventories, "inventories", false, "index inventories during reindex")
-
 }
 
 func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) error {
@@ -67,30 +66,26 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	defer db.Close()
 	schemaV := fmt.Sprintf("%d.%d", maj, min)
 	c.Logger.Info("using index file", "file", c.DBFile, "schema", schemaV)
-	idx := index.NewIndex(db, fsys, rootDir,
-		index.WithLogger(c.Logger),
-		index.WithObjectScanConc(c.ScanConc),
-		index.WithInventoryParseConc(c.ParseConc),
-	)
-	if !serverFlags.skipIndexing {
-		go func() {
-			// initial indexing
-			if err := idx.IndexInventories(ctx); err != nil {
-				c.Logger.Error(err, "initial indexing failed")
-			}
-		}()
-	}
-	summary, err := idx.GetStoreSummary(ctx)
-	if err != nil {
-		return fmt.Errorf("getting summary info from index: %w", err)
-	}
-	c.Logger.Info("index summary",
-		"description", summary.Description,
-		"object_count", summary.NumObjects,
-		"ocfl spec", summary.Spec,
-		"last_indexed", summary.IndexedAt)
+	idx := &index.Index{Backend: db}
 
-	service := index.Service{Index: idx}
+	// summary, err := idx.GetStoreSummary(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("getting summary info from index: %w", err)
+	// }
+	// c.Logger.Info("index summary",
+	// 	"description", summary.Description,
+	// 	"object_count", summary.NumObjects,
+	// 	"ocfl spec", summary.Spec,
+	// 	"last_indexed", summary.IndexedAt)
+	service := index.Service{
+		Index:     idx,
+		Async:     index.NewAsync(ctx),
+		FS:        fsys,
+		RootPath:  rootDir,
+		ScanConc:  c.ScanConc,
+		ParseConc: c.ParseConc,
+		Log:       c.Logger,
+	}
 	c.Logger.Info("starting http/grpc server", "port", c.Addr)
 	if err := http.ListenAndServe(c.Addr, h2c.NewHandler(service.HTTPHandler(), &http2.Server{})); err != nil {
 		return err

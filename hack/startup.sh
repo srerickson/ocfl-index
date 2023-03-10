@@ -8,10 +8,10 @@ export OCFL_INDEX_BACKEND="azure"
 export OCFL_INDEX_BUCKET="ocfl"
 
 # path relative to bucket/fs to OCFL storage root
-export OCFL_INDEX_STOREDIR="faker"
+export OCFL_INDEX_STOREDIR="public-data"
 
 # path to index file
-export OCFL_INDEX_SQLITE="faker.sqlite"
+export OCFL_INDEX_SQLITE="public.sqlite"
 
 # number of go routines for object scan
 export OCFL_INDEX_SCANWORKERS=100

@@ -19,10 +19,13 @@ import (
 	"github.com/srerickson/ocfl-index/internal/index"
 	"github.com/srerickson/ocfl-index/internal/sqlite/sqlc"
 	"github.com/srerickson/ocfl/ocflv1"
+	_ "modernc.org/sqlite"
 )
 
 const (
-	tablePrefix = "ocfl_index_"
+	tablePrefix    = "ocfl_index_"
+	sqliteSettings = "_busy_timeout=10000&_journal=WAL&_sync=NORMAL&cache=shared"
+	defaultLimit   = 1000
 )
 
 var (
@@ -49,8 +52,9 @@ type Backend struct {
 var _ index.Backend = (*Backend)(nil)
 
 // Open returns a new Backend using connection string conf, which is passed
-// directory to sql.Open. Open does not confirm the database schema
-// or
+// directory to sql.Open. The conf string should include the format:
+//
+//	file:name.sql?_busy_timeout=10000&_journal=WAL&_sync=NORMAL&cache=shared
 func Open(conf string) (*Backend, error) {
 	db, err := sql.Open("sqlite", conf)
 	if err != nil {
@@ -147,7 +151,7 @@ func (db *Backend) ListObjectRoots(ctx context.Context, limit int, cursor string
 
 func listObjectRootsTx(ctx context.Context, qry *sqlc.Queries, limit int, cursor string) (*index.ObjectRootList, error) {
 	if limit < 1 || limit > 1000 {
-		limit = 1000
+		limit = defaultLimit
 	}
 	// add 1 to limit to see if there are more items
 	roots, err := qry.ListObjectRoots(ctx, sqlc.ListObjectRootsParams{Path: cursor, Limit: int64(limit + 1)})
@@ -173,6 +177,9 @@ func listObjectRootsTx(ctx context.Context, qry *sqlc.Queries, limit int, cursor
 
 // We can't use sqlc here because we need to alter the query for different sort/cursor values.
 func (idx *Backend) ListObjects(ctx context.Context, sort index.ObjectSort, limit int, cursor string) (*index.ObjectList, error) {
+	if limit < 1 || limit > 1000 {
+		limit = defaultLimit
+	}
 	// TODO implement additional sorts
 	// TODO check limit value
 	// TODO parse cursor
