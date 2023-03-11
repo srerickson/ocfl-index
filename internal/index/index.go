@@ -35,11 +35,13 @@ type Index struct {
 }
 
 type ReindexOptions struct {
-	FS        ocfl.FS // storage root fs
-	RootPath  string  // storage root directory
-	ScanConc  int     // concurrency for readdir-based object scanning
-	ParseConc int     // concurrency for inventory parsers
-	Log       logr.Logger
+	FS          ocfl.FS // storage root fs
+	RootPath    string  // storage root directory
+	ScanConc    int     // concurrency for readdir-based object scanning
+	ParseConc   int     // concurrency for inventory parsers
+	Log         logr.Logger
+	ObjectIDs   []string // index specific object ids only
+	ObjectPaths []string // index specific object root paths only
 }
 
 // Reindex is updates the index database
@@ -47,19 +49,27 @@ func (idx *Index) Reindex(ctx context.Context, opts *ReindexOptions) error {
 	if opts.Log.GetSink() == nil {
 		opts.Log = logr.Discard()
 	}
-	if err := idx.indexObjectRoots(ctx, opts); err != nil {
+	// reindex select objects
+	if len(opts.ObjectPaths)+len(opts.ObjectIDs) > 0 {
+		if err := idx.indexInventories(ctx, opts); err != nil {
+			return fmt.Errorf("indexing inventories index: %w", err)
+		}
+		return nil
+	}
+	// reindex everything
+	if err := idx.syncObjectRoots(ctx, opts); err != nil {
 		return fmt.Errorf("updating the object path index: %w", err)
 	}
-	if err := idx.IndexInventories(ctx, opts); err != nil {
+	if err := idx.indexInventories(ctx, opts); err != nil {
 		return fmt.Errorf("indexing inventories index: %w", err)
 	}
 	return nil
 }
 
-// indexObjectRoots scans the storage root for object root directories, adds them
+// syncObjectRoots scans the storage root for object root directories, adds them
 // to the index (updated indexed_at for any existing entries), and removes any
 // object roots in the index that no longer exist in the storage root.
-func (idx *Index) indexObjectRoots(ctx context.Context, opts *ReindexOptions) error {
+func (idx *Index) syncObjectRoots(ctx context.Context, opts *ReindexOptions) error {
 	count := 0
 	method := "default"
 	var err error
@@ -179,7 +189,7 @@ func cloudSyncObjecRoots(ctx context.Context, db Backend, fsys *cloud.FS, root s
 	return found, nil
 }
 
-func (idx *Index) IndexInventories(ctx context.Context, opts *ReindexOptions) error {
+func (idx *Index) indexInventories(ctx context.Context, opts *ReindexOptions) error {
 	store, err := ocflv1.GetStore(ctx, opts.FS, opts.RootPath)
 	if err != nil {
 		return err
@@ -207,27 +217,27 @@ func (idx *Index) IndexInventories(ctx context.Context, opts *ReindexOptions) er
 	}
 	opts.Log.Info("indexing inventories ...", "path", opts.RootPath, "inventory_workers", opts.ParseConc)
 	numObjs := 0
-	// three-phase pipeline for indexing: scan for object roots; parse
+	// three-phase pipeline for indexing: add object paths; parse
 	// inventories; do indexing.
-	scan := func(add func(string) error) error {
-		cursor := ""
-		for {
-			tx := <-txCh
-			roots, err := tx.ListObjectRoots(ctx, 0, cursor)
+	addPaths := func(add func(string) error) error {
+		if len(opts.ObjectIDs)+len(opts.ObjectPaths) == 0 {
+			// add all paths in the index's object roots table
+			return addAllObjectsPaths(ctx, add, txCh)
+		}
+		// add just paths for specified objects
+		paths := make([]string, 0, len(opts.ObjectIDs)+len(opts.ObjectPaths))
+		paths = append(paths, opts.ObjectPaths...)
+		for _, id := range opts.ObjectIDs {
+			p, err := store.ResolveID(id)
 			if err != nil {
-				txCh <- tx
 				return err
 			}
-			txCh <- tx
-			for _, r := range roots.ObjectRoots {
-				if add(r.Path); err != nil {
-					return nil
-				}
-			}
-			if roots.NextCursor == "" {
+			paths = append(paths, p)
+		}
+		for _, p := range paths {
+			if add(p); err != nil {
 				break
 			}
-			cursor = roots.NextCursor
 		}
 		return nil
 	}
@@ -279,7 +289,7 @@ func (idx *Index) IndexInventories(ctx context.Context, opts *ReindexOptions) er
 		}
 		return nil
 	}
-	if err := pipeline.Run(scan, parse, index, opts.ParseConc); err != nil {
+	if err := pipeline.Run(addPaths, parse, index, opts.ParseConc); err != nil {
 		return fmt.Errorf("during indexing: %w", err)
 	}
 	{
@@ -317,4 +327,27 @@ func newIndexJob(ctx context.Context, prev *Object, fsys ocfl.FS, invDir string)
 	job.inv = inv
 	job.sidecar = inv.Digest()
 	return job
+}
+
+func addAllObjectsPaths(ctx context.Context, add func(string) error, txCh chan BackendTx) error {
+	cursor := ""
+	for {
+		tx := <-txCh
+		roots, err := tx.ListObjectRoots(ctx, 0, cursor)
+		if err != nil {
+			txCh <- tx
+			return err
+		}
+		txCh <- tx
+		for _, r := range roots.ObjectRoots {
+			if add(r.Path); err != nil {
+				return nil
+			}
+		}
+		if roots.NextCursor == "" {
+			break
+		}
+		cursor = roots.NextCursor
+	}
+	return nil
 }

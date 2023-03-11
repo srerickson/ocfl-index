@@ -21,6 +21,7 @@ type Cmd struct {
 	version   string
 	recursive bool
 	versions  bool
+	reindex   bool
 }
 
 func (ls *Cmd) NewCommand(r *root.Cmd) *cobra.Command {
@@ -32,6 +33,7 @@ func (ls *Cmd) NewCommand(r *root.Cmd) *cobra.Command {
 		ValidArgsFunction: ls.ValidArgsFunction(),
 	}
 	cmd.Flags().BoolVarP(&ls.recursive, "recursive", "r", false, "list files within a directory recursively")
+	cmd.Flags().BoolVar(&ls.reindex, "reindex", false, "reindex the object's inventory before listing (requires object id)")
 	cmd.Flags().BoolVar(&ls.versions, "versions", false, "list an object's versions instead of its files")
 	cmd.Flags().StringVarP(&ls.version, "version", "V", "", "use the specified object version (default value refers to HEAD)")
 	return cmd
@@ -53,6 +55,12 @@ func (ls *Cmd) Run(ctx context.Context, args []string) error {
 	// without an object id, list object ids in the index
 	if ls.objectID == "" {
 		return ls.listObjects(ctx)
+	}
+	if ls.reindex {
+		// first reindex the object
+		if err := ls.doReindex(ctx, ls.objectID); err != nil {
+			return fmt.Errorf("while reindexing: %w", err)
+		}
 	}
 	// if versions flag is set, list an object's versions
 	if ls.versions {
@@ -188,4 +196,24 @@ func (ls Cmd) listEntriesPrefix(ctx context.Context, id string, prefix string) (
 		cursor = resp.Msg.NextPageToken
 	}
 	return entries, nil
+}
+
+func (ls Cmd) doReindex(ctx context.Context, id string) error {
+	client := ls.root.ServiceClient()
+	rq := &ocflv0.ReindexRequest{
+		Op:   ocflv0.ReindexRequest_OP_REINDEX_IDS,
+		Args: []string{id},
+	}
+	// without an object id, list object ids in the index
+	stream, err := client.Reindex(ctx, connect.NewRequest(rq))
+	if err != nil {
+		return err
+	}
+	for stream.Receive() {
+		// show log messages?
+	}
+	if err := stream.Err(); err != nil {
+		return err
+	}
+	return nil
 }

@@ -55,7 +55,7 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 ```
 
 
-To regenerate gRPS stubs:
+To regenerate gRPC stubs:
 
 ```sh
 buf generate api
