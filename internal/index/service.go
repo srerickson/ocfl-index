@@ -39,30 +39,32 @@ type Service struct {
 var _ (ocflv0connect.IndexServiceHandler) = (*Service)(nil)
 
 func (srv Service) Reindex(ctx context.Context, rq *connect.Request[api.ReindexRequest], stream *connect.ServerStream[api.ReindexResponse]) error {
-	var waitCh chan error
+	// request to follow logs: not reindex necessary
+	if rq.Msg.Op == api.ReindexRequest_OP_FOLLOW_LOGS {
+		return srv.Async.MonitorOn(ctx, rq, stream, nil)
+	}
+	opts := &ReindexOptions{
+		FS:        srv.FS,
+		RootPath:  srv.RootPath,
+		ParseConc: srv.ParseConc,
+		ScanConc:  srv.ScanConc,
+	}
 	switch rq.Msg.Op {
 	case api.ReindexRequest_OP_REINDEX_ALL:
-		task := func(ctx context.Context, w io.Writer) error {
-			opts := &ReindexOptions{
-				FS:        srv.FS,
-				RootPath:  srv.RootPath,
-				ParseConc: srv.ParseConc,
-				ScanConc:  srv.ScanConc,
-				Log:       stdr.New(log.New(w, "", 0)),
-			}
-			return srv.Index.Reindex(ctx, opts)
-		}
-		added, taskErr := srv.Async.TryNow("indexing", task)
-		if !added {
-			return errors.New("an indexing task is already running")
-		}
-		waitCh = taskErr
-	case api.ReindexRequest_OP_FOLLOW_LOGS:
-		waitCh = nil
+	case api.ReindexRequest_OP_REINDEX_IDS:
+		opts.ObjectIDs = rq.Msg.Args
 	default:
 		return errors.New("not implemented")
 	}
-	return srv.Async.MonitorOn(ctx, rq, stream, waitCh)
+	task := func(ctx context.Context, w io.Writer) error {
+		opts.Log = stdr.New(log.New(w, "", 0))
+		return srv.Index.Reindex(ctx, opts)
+	}
+	added, taskErr := srv.Async.TryNow("indexing", task)
+	if !added {
+		return errors.New("an indexing task is already running")
+	}
+	return srv.Async.MonitorOn(ctx, rq, stream, taskErr)
 }
 
 func (srv Service) GetSummary(ctx context.Context, _ *connect.Request[api.GetSummaryRequest]) (*connect.Response[api.GetSummaryResponse], error) {
