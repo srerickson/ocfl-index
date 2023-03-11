@@ -8,6 +8,14 @@ require 'google/protobuf/timestamp_pb'
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_file("ocfl/v0/index.proto", :syntax => :proto3) do
     add_message "ocfl.v0.ReindexRequest" do
+      optional :op, :enum, 1, "ocfl.v0.ReindexRequest.Op", json_name: "op"
+      repeated :args, :string, 2, json_name: "args"
+    end
+    add_enum "ocfl.v0.ReindexRequest.Op" do
+      value :OP_REINDEX_ALL, 0
+      value :OP_FOLLOW_LOGS, 1
+      value :OP_REINDEX_IDS, 2
+      value :OP_REINDEX_PATHS, 3
     end
     add_message "ocfl.v0.ReindexResponse" do
       optional :log_message, :string, 1, json_name: "logMessage"
@@ -102,6 +110,7 @@ end
 module Ocfl
   module V0
     ReindexRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ReindexRequest").msgclass
+    ReindexRequest::Op = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ReindexRequest.Op").enummodule
     ReindexResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.ReindexResponse").msgclass
     GetSummaryRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetSummaryRequest").msgclass
     GetSummaryResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("ocfl.v0.GetSummaryResponse").msgclass

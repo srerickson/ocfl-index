@@ -12,6 +12,7 @@ import (
 
 type Cmd struct {
 	root *root.Cmd
+	logs bool
 }
 
 func (idx *Cmd) NewCommand(r *root.Cmd) *cobra.Command {
@@ -21,6 +22,7 @@ func (idx *Cmd) NewCommand(r *root.Cmd) *cobra.Command {
 		Short: "reindex",
 		Long:  "reindex",
 	}
+	cmd.Flags().BoolVar(&idx.logs, "logs", false, "follow logs of an existing reindexing process")
 	return cmd
 }
 
@@ -29,11 +31,16 @@ func (ls *Cmd) ParseArgs(args []string) error {
 	return nil
 }
 
-func (ls *Cmd) Run(ctx context.Context, args []string) error {
-	client := ls.root.ServiceClient()
+func (idx *Cmd) Run(ctx context.Context, args []string) error {
+	client := idx.root.ServiceClient()
+	rq := &ocflv0.ReindexRequest{
+		Op: ocflv0.ReindexRequest_OP_REINDEX_ALL,
+	}
+	if idx.logs {
+		rq.Op = ocflv0.ReindexRequest_OP_FOLLOW_LOGS
+	}
 	// without an object id, list object ids in the index
-	req := connect.NewRequest(&ocflv0.ReindexRequest{})
-	stream, err := client.Reindex(ctx, req)
+	stream, err := client.Reindex(ctx, connect.NewRequest(rq))
 	if err != nil {
 		return err
 	}

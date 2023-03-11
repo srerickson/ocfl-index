@@ -2,7 +2,6 @@ package index_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"testing"
 	"time"
@@ -11,16 +10,28 @@ import (
 )
 
 func TestScheduler(t *testing.T) {
+	var slept bool
 	task := func(_ context.Context, w io.Writer) error {
 		time.Sleep(25 * time.Millisecond)
+		slept = true
+
 		return nil
 	}
 	sch := index.NewAsync(context.Background())
-	if err := sch.TryNow("sleeping", task); err != nil {
-		t.Fatal(err)
+	added, doneErr := sch.TryNow("sleeping", task)
+	if !added {
+		t.Fatal("expected task to be added")
 	}
-	if err := sch.TryNow("snoozing", task); !errors.Is(err, index.ErrAsyncNotReady) {
-		t.Fatal("expected ErrBusy, got", err)
+	if added, _ := sch.TryNow("snoozing", task); added {
+		t.Fatal("expected task to not be added")
+	}
+	// block until running task is complete
+	err := <-doneErr
+	if err != nil {
+		t.Fatal("expected no error")
+	}
+	if !slept {
+		t.Fatal("should have slept")
 	}
 	sch.Close()
 	sch.Wait()

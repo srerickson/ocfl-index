@@ -25,7 +25,16 @@ service IndexService {
   rpc GetObjectState(GetObjectStateRequest) returns (GetObjectStateResponse) {}
 }
 
-message ReindexRequest{}
+message ReindexRequest{
+  enum Op {
+    OP_REINDEX_ALL = 0;   // search for new objects and reindex all inventories
+    OP_FOLLOW_LOGS = 1;   // follow logs of an existing reindex process
+    OP_REINDEX_IDS = 2;   // only reindex the object ids specified in args
+    OP_REINDEX_PATHS = 3; // only reindex the object root paths specified in args
+  }
+  Op op = 1;
+  repeated string args = 2;
+}
 
 message ReindexResponse{
   string log_message = 1;
