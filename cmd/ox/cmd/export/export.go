@@ -14,7 +14,7 @@ import (
 	"github.com/bufbuild/connect-go"
 	"github.com/spf13/cobra"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/root"
-	ocflv0 "github.com/srerickson/ocfl-index/gen/ocfl/v0"
+	ocflv1 "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 )
 
 const newDirMode = 0755
@@ -110,12 +110,12 @@ func (exp *Cmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (exp *Cmd) getFullObjectState(ctx context.Context, src string) (*ocflv0.GetObjectStateResponse, error) {
+func (exp *Cmd) getFullObjectState(ctx context.Context, src string) (*ocflv1.GetObjectStateResponse, error) {
 	client := exp.root.ServiceClient()
 	cursor := ""
-	var state *ocflv0.GetObjectStateResponse
+	var state *ocflv1.GetObjectStateResponse
 	for {
-		req := connect.NewRequest(&ocflv0.GetObjectStateRequest{
+		req := connect.NewRequest(&ocflv1.GetObjectStateRequest{
 			ObjectId:  exp.objectID,
 			Version:   exp.version,
 			BasePath:  src,

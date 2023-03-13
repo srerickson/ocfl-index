@@ -6,12 +6,11 @@ package status
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/bufbuild/connect-go"
 	"github.com/spf13/cobra"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/root"
-	ocflv0 "github.com/srerickson/ocfl-index/gen/ocfl/v0"
+	ocflv1 "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 )
 
 type Cmd struct {
@@ -34,19 +33,14 @@ func (status *Cmd) ParseArgs(args []string) error {
 
 func (status Cmd) Run(ctx context.Context, args []string) error {
 	client := status.root.ServiceClient()
-	req := connect.NewRequest(&ocflv0.GetSummaryRequest{})
-	resp, err := client.GetSummary(ctx, req)
+	req := connect.NewRequest(&ocflv1.GetStatusRequest{})
+	resp, err := client.GetStatus(ctx, req)
 	if err != nil {
 		return err
 	}
-	lastIndexed := "never"
-	if resp.Msg.IndexedAt.IsValid() {
-		lastIndexed = resp.Msg.IndexedAt.AsTime().Format(time.RFC3339)
-	}
 	// TODO: different format options
-	fmt.Println("OCFL spec:", resp.Msg.Spec)
-	fmt.Println("description:", resp.Msg.Description)
-	fmt.Println("indexed objects:", resp.Msg.NumObjects)
-	fmt.Println("last indexed:", lastIndexed)
+	fmt.Println("OCFL spec:", resp.Msg.StoreSpec)
+	fmt.Println("description:", resp.Msg.StoreDescription)
+	fmt.Println("indexed inventories:", resp.Msg.NumInventories)
 	return nil
 }

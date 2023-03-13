@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/bufbuild/connect-go"
-	ocflv0 "github.com/srerickson/ocfl-index/gen/ocfl/v0"
-	"github.com/srerickson/ocfl-index/gen/ocfl/v0/ocflv0connect"
+	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
+	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
 )
 
 func TestService(t *testing.T) {
@@ -19,7 +19,7 @@ func TestService(t *testing.T) {
 
 // Helpers below
 
-type serviceTestFunc func(t *testing.T, ctx context.Context, cli ocflv0connect.IndexServiceClient)
+type serviceTestFunc func(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient)
 
 func runServiceTest(t *testing.T, fn serviceTestFunc) {
 	ctx := context.Background()
@@ -28,14 +28,14 @@ func runServiceTest(t *testing.T, fn serviceTestFunc) {
 		t.Fatal(err)
 	}
 	httpSrv := httptest.NewTLSServer(service.HTTPHandler())
-	cli := ocflv0connect.NewIndexServiceClient(httpSrv.Client(), httpSrv.URL)
+	cli := ocflv1connect.NewIndexServiceClient(httpSrv.Client(), httpSrv.URL)
 	defer httpSrv.Close()
 	fn(t, ctx, cli)
 }
 
 // testListObjectsRequest
-func testListObjectsRequest(t *testing.T, ctx context.Context, cli ocflv0connect.IndexServiceClient) {
-	req := connect.NewRequest(&ocflv0.ListObjectsRequest{})
+func testListObjectsRequest(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient) {
+	req := connect.NewRequest(&api.ListObjectsRequest{})
 	rsp, err := cli.ListObjects(ctx, req)
 	if err != nil {
 		t.Fatal(err)

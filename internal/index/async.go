@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/bufbuild/connect-go"
-	api "github.com/srerickson/ocfl-index/gen/ocfl/v0"
+	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 )
 
 const monMsgBuffLen = 64  // size for async monitor's buffered message channel
@@ -97,7 +97,7 @@ func (sch *Async) TryNow(name string, fn taskFn) (bool, chan error) {
 	}
 }
 
-func (sch *Async) MonitorOn(ctx context.Context, rq *connect.Request[api.ReindexRequest], stream *connect.ServerStream[api.ReindexResponse], errCh chan error) error {
+func (sch *Async) MonitorOn(ctx context.Context, rq *connect.Request[api.FollowLogsRequest], stream *connect.ServerStream[api.FollowLogsResponse], errCh chan error) error {
 	return sch.monitor.Handle(ctx, rq, stream, errCh)
 }
 
@@ -137,17 +137,17 @@ func (t *asyncTask) run(ctx context.Context, w io.Writer) {
 
 // monitor is an io.Writer that forwards messages to registered grpc sessions
 type monitor struct {
-	sessions   sessionMap                                // map of all connections
-	msgCh      chan string                               // for new messages
-	sessInitCh chan monitorRequest                       // channel for new session requests
-	sessFreeCh chan *connect.Request[api.ReindexRequest] // channel for freeing resource on a session
-	done       chan struct{}                             // to close the monitor
+	sessions   sessionMap                                   // map of all connections
+	msgCh      chan string                                  // for new messages
+	sessInitCh chan monitorRequest                          // channel for new session requests
+	sessFreeCh chan *connect.Request[api.FollowLogsRequest] // channel for freeing resource on a session
+	done       chan struct{}                                // to close the monitor
 }
 
 func (m *monitor) Start() {
 	m.sessions = make(sessionMap)
 	m.sessInitCh = make(chan monitorRequest)
-	m.sessFreeCh = make(chan *connect.Request[api.ReindexRequest])
+	m.sessFreeCh = make(chan *connect.Request[api.FollowLogsRequest])
 	m.msgCh = make(chan string, monMsgBuffLen)
 	m.done = make(chan struct{}) // should be closed explicitly
 	wg := sync.WaitGroup{}
@@ -195,7 +195,7 @@ func (m *monitor) Write(b []byte) (int, error) {
 //
 // Note that taskErr may be nill, in which case the request will monitor any
 // existing future tasks but it will never disconnect whey those tasks complete.
-func (m *monitor) Handle(ctx context.Context, rq *connect.Request[api.ReindexRequest], stream *connect.ServerStream[api.ReindexResponse], taskErrCh chan error) error {
+func (m *monitor) Handle(ctx context.Context, rq *connect.Request[api.FollowLogsRequest], stream *connect.ServerStream[api.FollowLogsResponse], taskErrCh chan error) error {
 	monErrCh := make(chan error, 1) // used to receive error while establishing the monitiros session
 	defer close(monErrCh)
 	m.sessInitCh <- monitorRequest{rq, stream, monErrCh}
@@ -246,7 +246,7 @@ func (m *monitor) runLoop() {
 			delete(m.sessions, r)
 		case msg := <-m.msgCh:
 			for _, sess := range m.sessions {
-				resp := &api.ReindexResponse{LogMessage: msg}
+				resp := &api.FollowLogsResponse{Message: msg}
 				if err := sess.stream.Send(resp); err != nil {
 					sess.errCh <- ErrAsyncMonitorSend
 				}
@@ -262,17 +262,17 @@ func (m *monitor) runLoop() {
 }
 
 // session map is used by monitor to track current connections
-type sessionMap map[*connect.Request[api.ReindexRequest]]monitorSession
+type sessionMap map[*connect.Request[api.FollowLogsRequest]]monitorSession
 
 // request to establish a new session
 type monitorRequest struct {
-	rq     *connect.Request[api.ReindexRequest]
-	stream *connect.ServerStream[api.ReindexResponse]
+	rq     *connect.Request[api.FollowLogsRequest]
+	stream *connect.ServerStream[api.FollowLogsResponse]
 	errCh  chan error // error establishing a session, or sending messages
 }
 
 // an established monitor session
 type monitorSession struct {
-	stream *connect.ServerStream[api.ReindexResponse]
+	stream *connect.ServerStream[api.FollowLogsResponse]
 	errCh  chan error // error establishing a session, or sending messages
 }

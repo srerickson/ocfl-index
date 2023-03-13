@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/bufbuild/connect-go"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
-	"github.com/srerickson/ocfl-index/gen/ocfl/v0/ocflv0connect"
+	ocflv1 "github.com/srerickson/ocfl-index/gen/ocfl/v1"
+	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
 )
 
 const (
@@ -24,7 +26,7 @@ type Cmd struct {
 	Log        logr.Logger
 	RemoteURL  string
 	httpClient *http.Client
-	rpcClient  ocflv0connect.IndexServiceClient
+	rpcClient  ocflv1connect.IndexServiceClient
 }
 
 type OxCmd interface {
@@ -61,9 +63,9 @@ func (ox *Cmd) HTTPClient() *http.Client {
 	}
 	return ox.httpClient
 }
-func (ox *Cmd) ServiceClient() ocflv0connect.IndexServiceClient {
+func (ox *Cmd) ServiceClient() ocflv1connect.IndexServiceClient {
 	if ox.rpcClient == nil {
-		ox.rpcClient = ocflv0connect.NewIndexServiceClient(ox.HTTPClient(), ox.RemoteURL)
+		ox.rpcClient = ocflv1connect.NewIndexServiceClient(ox.HTTPClient(), ox.RemoteURL)
 	}
 	return ox.rpcClient
 }
@@ -73,4 +75,21 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func (ox *Cmd) FollowLogs(ctx context.Context) error {
+	cli := ox.ServiceClient()
+	rq := ocflv1.FollowLogsRequest{}
+	stream, err := cli.FollowLogs(ctx, connect.NewRequest(&rq))
+	if err != nil {
+		return err
+	}
+	for stream.Receive() {
+		msg := stream.Msg().Message
+		ox.Log.Info(msg)
+	}
+	if err := stream.Err(); err != nil {
+		return err
+	}
+	return nil
 }

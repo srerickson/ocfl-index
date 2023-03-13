@@ -11,7 +11,7 @@ import (
 	"github.com/bufbuild/connect-go"
 	"github.com/spf13/cobra"
 	"github.com/srerickson/ocfl-index/cmd/ox/cmd/root"
-	ocflv0 "github.com/srerickson/ocfl-index/gen/ocfl/v0"
+	ocflv1 "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 )
 
 type Cmd struct {
@@ -68,7 +68,7 @@ func (ls *Cmd) Run(ctx context.Context, args []string) error {
 	}
 	cursor := ""
 	for {
-		req := connect.NewRequest(&ocflv0.GetObjectStateRequest{
+		req := connect.NewRequest(&ocflv1.GetObjectStateRequest{
 			ObjectId:  ls.objectID,
 			Version:   ls.version,
 			BasePath:  ls.dir,
@@ -115,7 +115,7 @@ func (ls Cmd) listObjects(ctx context.Context) error {
 	client := ls.root.ServiceClient()
 	cursor := ""
 	for {
-		req := connect.NewRequest(&ocflv0.ListObjectsRequest{
+		req := connect.NewRequest(&ocflv1.ListObjectsRequest{
 			PageToken: cursor,
 			PageSize:  1000,
 		})
@@ -141,7 +141,7 @@ func (ls Cmd) listObjects(ctx context.Context) error {
 
 func (ls Cmd) listObjectVersions(ctx context.Context) error {
 	client := ls.root.ServiceClient()
-	req := connect.NewRequest(&ocflv0.GetObjectRequest{ObjectId: ls.objectID})
+	req := connect.NewRequest(&ocflv1.GetObjectRequest{ObjectId: ls.objectID})
 	resp, err := client.GetObject(ctx, req)
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func (ls Cmd) listEntriesPrefix(ctx context.Context, id string, prefix string) (
 	}
 	cursor := ""
 	for {
-		req := connect.NewRequest(&ocflv0.GetObjectStateRequest{
+		req := connect.NewRequest(&ocflv1.GetObjectStateRequest{
 			ObjectId:  id,
 			Version:   ls.version,
 			BasePath:  dir,
@@ -200,19 +200,12 @@ func (ls Cmd) listEntriesPrefix(ctx context.Context, id string, prefix string) (
 
 func (ls Cmd) doReindex(ctx context.Context, id string) error {
 	client := ls.root.ServiceClient()
-	rq := &ocflv0.ReindexRequest{
-		Op:   ocflv0.ReindexRequest_OP_REINDEX_IDS,
-		Args: []string{id},
+	rq := &ocflv1.IndexIDsRequest{
+		ObjectIds: []string{id},
 	}
 	// without an object id, list object ids in the index
-	stream, err := client.Reindex(ctx, connect.NewRequest(rq))
+	_, err := client.IndexIDs(ctx, connect.NewRequest(rq))
 	if err != nil {
-		return err
-	}
-	for stream.Receive() {
-		// show log messages?
-	}
-	if err := stream.Err(); err != nil {
 		return err
 	}
 	return nil
