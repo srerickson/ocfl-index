@@ -27,7 +27,7 @@ func TestPipelineNil(t *testing.T) {
 }
 
 func TestPipelineSetupErr(t *testing.T) {
-	input := func(add func(job) error) error {
+	input := func(add func(job) bool) error {
 		return errors.New("catch me")
 	}
 	output := func(in job, out result, err error) error {
@@ -40,7 +40,7 @@ func TestPipelineSetupErr(t *testing.T) {
 }
 
 func TestPipelineResultErr(t *testing.T) {
-	input := func(add func(job) error) error {
+	input := func(add func(job) bool) error {
 		add(job(-1)) // invalid job
 		return nil
 	}
@@ -55,7 +55,7 @@ func TestPipelineResultErr(t *testing.T) {
 
 func TestPipeline(t *testing.T) {
 	times := 100
-	input := func(add func(job) error) error {
+	input := func(add func(job) bool) error {
 		for i := 0; i < times; i++ {
 			add(job(i))
 		}
@@ -76,10 +76,10 @@ func TestPipeline(t *testing.T) {
 }
 
 func BenchmarkPipeline(b *testing.B) {
-	input := func(add func(job) error) error {
+	input := func(add func(job) bool) error {
 		for i := 0; i < b.N; i++ {
-			if err := add(job(i)); err != nil {
-				return err
+			if !add(job(i)) {
+				return errors.New("job not added")
 			}
 		}
 		return nil

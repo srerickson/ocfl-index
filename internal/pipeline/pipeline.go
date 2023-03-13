@@ -12,7 +12,7 @@ var ErrNotAdded = errors.New("task not added to pipeline")
 // concurrently
 type pipeline[Tin, Tout any] struct {
 	numgos   int
-	setupFn  func(func(Tin) error) error
+	setupFn  func(func(Tin) bool) error
 	workFn   func(Tin) (Tout, error)
 	resultFn func(Tin, Tout, error) error
 }
@@ -31,7 +31,7 @@ type result[Tin, Tout any] struct {
 // worker go routines (the default is runtime.NumCPU()).
 
 func Run[Tin, Tout any](
-	setupFn func(func(Tin) error) error,
+	setupFn func(func(Tin) bool) error,
 	workFn func(Tin) (Tout, error),
 	resultFn func(Tin, Tout, error) error, gos int) error {
 
@@ -59,12 +59,12 @@ func (p *pipeline[Tin, Tout]) run() error {
 			setupErr <- nil
 			return
 		}
-		addWork := func(w Tin) error {
+		addWork := func(w Tin) bool {
 			select {
 			case workQ <- w:
-				return nil
+				return true
 			case <-term:
-				return ErrNotAdded
+				return false
 			}
 		}
 		setupErr <- p.setupFn(addWork)
