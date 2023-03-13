@@ -51,13 +51,13 @@ func DoIndex(ctx context.Context, conf *config, fsys ocfl.FS, rootDir string) er
 	if _, err := db.InitSchema(ctx); err != nil {
 		return err
 	}
-	idx := &index.Index{Backend: db}
-	opts := &index.ReindexOptions{
+	idx := &index.Indexer{Backend: db}
+	opts := &index.IndexOptions{
 		FS:        fsys,
 		RootPath:  rootDir,
 		ScanConc:  conf.ScanConc,
 		ParseConc: conf.ParseConc,
 		Log:       conf.Logger,
 	}
-	return idx.Reindex(ctx, opts)
+	return idx.Index(ctx, opts)
 }

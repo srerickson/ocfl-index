@@ -2,10 +2,18 @@ package index
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl/ocflv1"
+)
+
+var (
+	ErrNotFound     = errors.New("not found")
+	ErrMissingValue = errors.New("missing value")
+	ErrInvalidArgs  = errors.New("invalid arguments")
+	ErrIndexValue   = errors.New("unexpected value in index, possible corruption")
 )
 
 // Backend is an interface that can be implemented for different databases for

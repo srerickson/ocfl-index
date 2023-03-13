@@ -20,21 +20,12 @@ import (
 const txCapInv = 10       // number of inventory inserts per transaction
 const txCapObjRoot = 1000 // number of object root inserts transaction
 
-// set during with build with
-// -ldflags -X 'github.com/srerickson/ocfl-index/internal/index.Version=v0.0.X'
-var Version = "devel"
-
-var ErrNotFound = errors.New("not found")
-var ErrMissingValue = errors.New("missing value")
-var ErrInvalidArgs = errors.New("invalid arguments")
-var ErrIndexValue = errors.New("unexpected value in index, possible corruption")
-
-// Index provides indexing for an OCFL Storage Root
-type Index struct {
+// Indexer provides indexing for an OCFL Storage Root
+type Indexer struct {
 	Backend
 }
 
-type ReindexOptions struct {
+type IndexOptions struct {
 	FS          ocfl.FS // storage root fs
 	RootPath    string  // storage root directory
 	ScanConc    int     // concurrency for readdir-based object scanning
@@ -44,24 +35,19 @@ type ReindexOptions struct {
 	ObjectPaths []string // index specific object root paths only
 }
 
-// Reindex is updates the index database
-func (idx *Index) Reindex(ctx context.Context, opts *ReindexOptions) error {
+// Index is updates the index database
+func (idx *Indexer) Index(ctx context.Context, opts *IndexOptions) error {
 	if opts.Log.GetSink() == nil {
 		opts.Log = logr.Discard()
 	}
-	// reindex select objects
-	if len(opts.ObjectPaths)+len(opts.ObjectIDs) > 0 {
-		if err := idx.indexInventories(ctx, opts); err != nil {
-			return fmt.Errorf("indexing inventories index: %w", err)
+	if len(opts.ObjectPaths)+len(opts.ObjectIDs) == 0 {
+		// reindex everything
+		if err := idx.syncObjectRoots(ctx, opts); err != nil {
+			return fmt.Errorf("updating the object path index: %w", err)
 		}
-		return nil
-	}
-	// reindex everything
-	if err := idx.syncObjectRoots(ctx, opts); err != nil {
-		return fmt.Errorf("updating the object path index: %w", err)
 	}
 	if err := idx.indexInventories(ctx, opts); err != nil {
-		return fmt.Errorf("indexing inventories index: %w", err)
+		return fmt.Errorf("indexing inventories: %w", err)
 	}
 	return nil
 }
@@ -69,7 +55,7 @@ func (idx *Index) Reindex(ctx context.Context, opts *ReindexOptions) error {
 // syncObjectRoots scans the storage root for object root directories, adds them
 // to the index (updated indexed_at for any existing entries), and removes any
 // object roots in the index that no longer exist in the storage root.
-func (idx *Index) syncObjectRoots(ctx context.Context, opts *ReindexOptions) error {
+func (idx *Indexer) syncObjectRoots(ctx context.Context, opts *IndexOptions) error {
 	count := 0
 	method := "default"
 	var err error
@@ -189,40 +175,40 @@ func cloudSyncObjecRoots(ctx context.Context, db Backend, fsys *cloud.FS, root s
 	return found, nil
 }
 
-func (idx *Index) indexInventories(ctx context.Context, opts *ReindexOptions) error {
+func (idx *Indexer) indexInventories(ctx context.Context, opts *IndexOptions) error {
+	// TODO: store should be part of ReindexOptions
 	store, err := ocflv1.GetStore(ctx, opts.FS, opts.RootPath)
 	if err != nil {
 		return err
 	}
 	// store the storage root's info in the database -- do we need to do this?
-	// Why not just keep the values in idx?
 	if err := idx.SetStoreInfo(ctx, opts.RootPath, store.Description(), store.Spec()); err != nil {
+		return err
+	}
+	indexingAll := len(opts.ObjectIDs)+len(opts.ObjectPaths) == 0
+	// new transaction in NewTx
+	tx, err := idx.NewTx(ctx)
+	if err != nil {
 		return err
 	}
 	// txCh is used to share the database transcation across multiple go
 	// routines.
 	txCh := make(chan BackendTx, 1)
+	txCh <- tx
 	defer func() {
 		tx := <-txCh
 		tx.Rollback()
 		close(txCh)
 	}()
-	{
-		// new transaction in NewTx
-		tx, err := idx.NewTx(ctx)
-		if err != nil {
-			return err
-		}
-		txCh <- tx
-	}
+
 	opts.Log.Info("indexing inventories ...", "path", opts.RootPath, "inventory_workers", opts.ParseConc)
 	numObjs := 0
 	// three-phase pipeline for indexing: add object paths; parse
 	// inventories; do indexing.
-	addPaths := func(add func(string) error) error {
-		if len(opts.ObjectIDs)+len(opts.ObjectPaths) == 0 {
-			// add all paths in the index's object roots table
-			return addAllObjectsPaths(ctx, add, txCh)
+	addPaths := func(addPath func(string) bool) error {
+		if indexingAll {
+			// reindex everyting
+			return addAllObjectsPaths(ctx, addPath, txCh)
 		}
 		// add just paths for specified objects
 		paths := make([]string, 0, len(opts.ObjectIDs)+len(opts.ObjectPaths))
@@ -230,12 +216,12 @@ func (idx *Index) indexInventories(ctx context.Context, opts *ReindexOptions) er
 		for _, id := range opts.ObjectIDs {
 			p, err := store.ResolveID(id)
 			if err != nil {
-				return err
+				return fmt.Errorf("cannot index object, failed to resolve path: %w", err)
 			}
 			paths = append(paths, p)
 		}
 		for _, p := range paths {
-			if add(p); err != nil {
+			if addPath(p); err != nil {
 				break
 			}
 		}
@@ -243,28 +229,53 @@ func (idx *Index) indexInventories(ctx context.Context, opts *ReindexOptions) er
 	}
 	// parse inventories function (run in multiple go routines)
 	parse := func(objPath string) (*indexJob, error) {
-		// objPath is relative to the storage root
-		tx := <-txCh
-		prev, err := tx.GetObjectByPath(ctx, objPath)
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		var prev *Object // previously indexed object
+		{
+			tx := <-txCh
+			var err error
+			prev, err = tx.GetObjectByPath(ctx, objPath)
+			if err != nil && !errors.Is(err, ErrNotFound) {
+				txCh <- tx
+				return nil, err
+			}
 			txCh <- tx
-			return nil, err
 		}
-		txCh <- tx
-		invPath := path.Join(opts.RootPath, objPath)
-		job := newIndexJob(ctx, prev, opts.FS, invPath)
+		// TODO: read sidecar here and compare to prev's sidecar value (if
+		// available). Can skip reading full inventory if sidecars match
+		// validate inventory
+		invPath := path.Join(opts.RootPath, objPath, "inventory.json")
+		inv, vErrs := ocflv1.ValidateInventory(ctx, opts.FS, invPath, nil)
+		if err := vErrs.Err(); err != nil {
+			// don't quit if the inventory has errors
+			return &indexJob{err: err}, nil
+		}
+		job := &indexJob{prev: prev, inv: inv}
+		if job.inv != nil {
+			job.sidecar = job.inv.Digest()
+		}
 		return job, nil
 	}
 	// index update function (single go routine)
 	index := func(root string, job *indexJob, err error) error {
 		if err != nil {
-			return err
+			return fmt.Errorf("in object '%s': %w", root, err)
+		}
+		if job.err != nil {
+			// different behavior here depending on whether we are indexing
+			// everything or select IDs. For select ids, we quit without
+			// indexing additionl objects. For indexing all, we log and
+			// continue.
+			if !indexingAll {
+				return job.err
+			}
+			opts.Log.Error(job.err, "object has errors", "object_path", root)
 		}
 		if job.inv == nil {
-			return nil // inventory had errors, skip it
+			// nothing to do
+			return nil
 		}
 		if job.prev != nil && job.sidecar != "" && job.prev.InventoryDigest == job.sidecar {
-			// unchanged skip it
+			opts.Log.V(10).Info("object is unchanged", "object_path", root)
 			return nil
 		}
 		numObjs++
@@ -290,7 +301,7 @@ func (idx *Index) indexInventories(ctx context.Context, opts *ReindexOptions) er
 		return nil
 	}
 	if err := pipeline.Run(addPaths, parse, index, opts.ParseConc); err != nil {
-		return fmt.Errorf("during indexing: %w", err)
+		return fmt.Errorf("indexing halted prematurely: %w", err)
 	}
 	{
 		// commit any pending changes
@@ -312,24 +323,7 @@ type indexJob struct {
 	err     error   // error during inventory parse
 }
 
-func newIndexJob(ctx context.Context, prev *Object, fsys ocfl.FS, invDir string) *indexJob {
-	// TODO: read sidecar for object and compare to avoid reading inventory unnecessarily.
-	// if prev != nil {
-	// }
-	job := &indexJob{prev: prev}
-	invPath := path.Join(invDir, "inventory.json")
-	inv, vErrs := ocflv1.ValidateInventory(ctx, fsys, invPath, nil)
-	if err := vErrs.Err(); err != nil {
-		// don't quit if the inventory has errors
-		job.err = err
-		return job
-	}
-	job.inv = inv
-	job.sidecar = inv.Digest()
-	return job
-}
-
-func addAllObjectsPaths(ctx context.Context, add func(string) error, txCh chan BackendTx) error {
+func addAllObjectsPaths(ctx context.Context, add func(string) bool, txCh chan BackendTx) error {
 	cursor := ""
 	for {
 		tx := <-txCh
@@ -351,3 +345,6 @@ func addAllObjectsPaths(ctx context.Context, add func(string) error, txCh chan B
 	}
 	return nil
 }
+
+// TODO: ocfl api should expose api for this
+//func getSide
