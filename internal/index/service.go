@@ -29,7 +29,7 @@ type Service struct {
 	Log       logr.Logger
 	FS        ocfl.FS
 	RootPath  string
-	Index     *Index
+	Index     *Indexer
 	Async     *Async
 	ParseConc int
 	ScanConc  int
@@ -39,7 +39,7 @@ type Service struct {
 var _ (ocflv1connect.IndexServiceHandler) = (*Service)(nil)
 
 func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAllRequest]) (*connect.Response[api.IndexAllResponse], error) {
-	opts := &ReindexOptions{
+	opts := &IndexOptions{
 		FS:        srv.FS,
 		RootPath:  srv.RootPath,
 		ParseConc: srv.ParseConc,
@@ -47,7 +47,7 @@ func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAl
 	}
 	task := func(ctx context.Context, w io.Writer) error {
 		opts.Log = stdr.New(log.New(w, "", 0))
-		return srv.Index.Reindex(ctx, opts)
+		return srv.Index.Index(ctx, opts)
 	}
 	added, _ := srv.Async.TryNow("indexing", task)
 	if !added {
@@ -58,7 +58,7 @@ func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAl
 
 func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexIDsRequest]) (*connect.Response[api.IndexIDsResponse], error) {
 	// todo check max number of ids
-	opts := &ReindexOptions{
+	opts := &IndexOptions{
 		FS:        srv.FS,
 		RootPath:  srv.RootPath,
 		ParseConc: srv.ParseConc,
@@ -67,7 +67,7 @@ func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexID
 	}
 	task := func(ctx context.Context, w io.Writer) error {
 		opts.Log = stdr.New(log.New(w, "", 0))
-		return srv.Index.Reindex(ctx, opts)
+		return srv.Index.Index(ctx, opts)
 	}
 	added, taskErr := srv.Async.TryNow("indexing", task)
 	if !added {

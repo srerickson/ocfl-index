@@ -15,7 +15,7 @@ import (
 
 var fixtureRoot = filepath.Join("..", "..", "testdata")
 
-func newTestIndex(ctx context.Context, dbname string) (*index.Index, error) {
+func newTestIndex(ctx context.Context, dbname string) (*index.Indexer, error) {
 	conn := fmt.Sprintf("file:%s?mode=memory&_busy_timeout=10000&_journal=WAL&_sync=NORMAL&cache=shared", dbname)
 	db, err := sqlite.Open(conn)
 	if err != nil {
@@ -24,7 +24,7 @@ func newTestIndex(ctx context.Context, dbname string) (*index.Index, error) {
 	if _, err := db.InitSchema(ctx); err != nil {
 		return nil, err
 	}
-	return &index.Index{
+	return &index.Indexer{
 		Backend: db,
 	}, nil
 }
@@ -47,12 +47,12 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		Log:   logr.Discard(),
 		Async: index.NewAsync(ctx),
 	}
-	opts := &index.ReindexOptions{
+	opts := &index.IndexOptions{
 		FS:       fsys,
 		RootPath: fixture,
 		Log:      logr.Discard(),
 	}
-	if err := srv.Index.Reindex(ctx, opts); err != nil {
+	if err := srv.Index.Index(ctx, opts); err != nil {
 		return nil, err
 	}
 	return srv, nil

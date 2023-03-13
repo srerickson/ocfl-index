@@ -66,7 +66,7 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	defer db.Close()
 	schemaV := fmt.Sprintf("%d.%d", maj, min)
 	c.Logger.Info("using index file", "file", c.DBFile, "schema", schemaV)
-	idx := &index.Index{Backend: db}
+	idx := &index.Indexer{Backend: db}
 
 	// summary, err := idx.GetStoreSummary(ctx)
 	// if err != nil {

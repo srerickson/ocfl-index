@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/srerickson/ocfl-index/gen/ocfl/v1;ocflv1";
 
+// IndexService is used to index and query OCFL objects in a repository.
 service IndexService {
   // Get index status, counts, and storage root details
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
