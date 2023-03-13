@@ -18,8 +18,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/srerickson/ocfl"
-	api "github.com/srerickson/ocfl-index/gen/ocfl/v0"
-	"github.com/srerickson/ocfl-index/gen/ocfl/v0/ocflv0connect"
+	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
+	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
 )
 
 const downloadPrefix = "/download"
@@ -36,25 +36,34 @@ type Service struct {
 }
 
 // Service implements the service generated with connect-go
-var _ (ocflv0connect.IndexServiceHandler) = (*Service)(nil)
+var _ (ocflv1connect.IndexServiceHandler) = (*Service)(nil)
 
-func (srv Service) Reindex(ctx context.Context, rq *connect.Request[api.ReindexRequest], stream *connect.ServerStream[api.ReindexResponse]) error {
-	// request to follow logs: not reindex necessary
-	if rq.Msg.Op == api.ReindexRequest_OP_FOLLOW_LOGS {
-		return srv.Async.MonitorOn(ctx, rq, stream, nil)
-	}
+func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAllRequest]) (*connect.Response[api.IndexAllResponse], error) {
 	opts := &ReindexOptions{
 		FS:        srv.FS,
 		RootPath:  srv.RootPath,
 		ParseConc: srv.ParseConc,
 		ScanConc:  srv.ScanConc,
 	}
-	switch rq.Msg.Op {
-	case api.ReindexRequest_OP_REINDEX_ALL:
-	case api.ReindexRequest_OP_REINDEX_IDS:
-		opts.ObjectIDs = rq.Msg.Args
-	default:
-		return errors.New("not implemented")
+	task := func(ctx context.Context, w io.Writer) error {
+		opts.Log = stdr.New(log.New(w, "", 0))
+		return srv.Index.Reindex(ctx, opts)
+	}
+	added, _ := srv.Async.TryNow("indexing", task)
+	if !added {
+		return nil, errors.New("an indexing task is already running")
+	}
+	return connect.NewResponse(&api.IndexAllResponse{}), nil
+}
+
+func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexIDsRequest]) (*connect.Response[api.IndexIDsResponse], error) {
+	// todo check max number of ids
+	opts := &ReindexOptions{
+		FS:        srv.FS,
+		RootPath:  srv.RootPath,
+		ParseConc: srv.ParseConc,
+		ScanConc:  srv.ScanConc,
+		ObjectIDs: rq.Msg.ObjectIds,
 	}
 	task := func(ctx context.Context, w io.Writer) error {
 		opts.Log = stdr.New(log.New(w, "", 0))
@@ -62,12 +71,16 @@ func (srv Service) Reindex(ctx context.Context, rq *connect.Request[api.ReindexR
 	}
 	added, taskErr := srv.Async.TryNow("indexing", task)
 	if !added {
-		return errors.New("an indexing task is already running")
+		return nil, errors.New("an indexing task is already running")
 	}
-	return srv.Async.MonitorOn(ctx, rq, stream, taskErr)
+	if err := <-taskErr; err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&api.IndexIDsResponse{}), nil
+	// return srv.Async.MonitorOn(ctx, rq, stream, taskErr)
 }
 
-func (srv Service) GetSummary(ctx context.Context, _ *connect.Request[api.GetSummaryRequest]) (*connect.Response[api.GetSummaryResponse], error) {
+func (srv Service) GetStatus(ctx context.Context, _ *connect.Request[api.GetStatusRequest]) (*connect.Response[api.GetStatusResponse], error) {
 	summ, err := srv.Index.GetStoreSummary(ctx)
 	if err != nil {
 		return nil, err
@@ -76,24 +89,7 @@ func (srv Service) GetSummary(ctx context.Context, _ *connect.Request[api.GetSum
 }
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
-	var sort ObjectSort
-	if rq.Msg.OrderBy != nil {
-		switch rq.Msg.OrderBy.Field {
-		case api.ListObjectsRequest_Sort_FIELD_UNSPECIFIED:
-			fallthrough
-		case api.ListObjectsRequest_Sort_FIELD_ID:
-			sort = SortID
-		case api.ListObjectsRequest_Sort_FIELD_V1_CREATED:
-			sort = SortV1Created
-		case api.ListObjectsRequest_Sort_FIELD_HEAD_CREATED:
-			sort = SortHeadCreated
-		}
-		switch rq.Msg.OrderBy.Order {
-		case api.ListObjectsRequest_Sort_ORDER_DESC:
-			sort = sort | DESC
-		}
-	}
-	objects, err := srv.Index.ListObjects(ctx, sort, int(rq.Msg.PageSize), rq.Msg.PageToken)
+	objects, err := srv.Index.ListObjects(ctx, SortID, int(rq.Msg.PageSize), rq.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +104,15 @@ func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObj
 	return asGetObjectResponse(obj), nil
 }
 
+func (srv Service) FollowLogs(ctx context.Context, rq *connect.Request[api.FollowLogsRequest], stream *connect.ServerStream[api.FollowLogsResponse]) error {
+	return srv.Async.MonitorOn(ctx, rq, stream, nil)
+}
+
 // HTTPHandler returns new http.Handler for the index service
 func (srv Service) HTTPHandler() http.Handler {
 	mux := chi.NewRouter()
 	mux.Use(RequestLogger(srv.Log))
-	mux.Mount(ocflv0connect.NewIndexServiceHandler(srv))
+	mux.Mount(ocflv1connect.NewIndexServiceHandler(srv))
 	mux.Get(downloadPrefix+"/{sum}", srv.downloadHandler())
 	mux.Get(downloadPrefix+"/{sum}/{name}", srv.downloadHandler())
 	return mux
@@ -203,13 +203,13 @@ func asGetObjectStateResponse(inf *PathInfo) *connect.Response[api.GetObjectStat
 	return connect.NewResponse(msg)
 
 }
-func asSummaryResponse(summ StoreSummary) *connect.Response[api.GetSummaryResponse] {
-	msg := &api.GetSummaryResponse{
-		Description: summ.Description,
-		Spec:        summ.Spec.String(),
-		NumObjects:  int32(summ.NumObjects),
-		RootPath:    summ.RootPath,
-		IndexedAt:   timestamppb.New(summ.IndexedAt),
+func asSummaryResponse(summ StoreSummary) *connect.Response[api.GetStatusResponse] {
+	msg := &api.GetStatusResponse{
+		StoreDescription: summ.Description,
+		StoreSpec:        summ.Spec.String(),
+		NumInventories:   int32(summ.NumObjects),
+		StoreRootPath:    summ.RootPath,
+		// IndexedAt:        timestamppb.New(summ.IndexedAt),
 	}
 	return connect.NewResponse(msg)
 }
