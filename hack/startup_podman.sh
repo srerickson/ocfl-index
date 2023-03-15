@@ -17,4 +17,4 @@ podman run --rm -it \
     -e OCFL_INDEX_SQLITE="/data/public-data.sqlite" \
     -v ocfl-index-data:/data \
     -p 8080:8080 \
-    localhost/srerickson/ocfl-index:latest
+    docker.io/srerickson/ocfl-index:latest
