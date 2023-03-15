@@ -8,7 +8,6 @@ This repository includes a command line client, `ox`, as well as protocol buffer
 
 ## Usage Example
 
-
 ### Configure and Start the Server
 ```sh
 # s3 credentials
@@ -54,6 +53,10 @@ podman run --rm -it \
 # set server endpoint (default is "http://localhost:8080")
 $ export OCFL_INDEX="https://myindex"
 
+# build the index 
+# the command returns immediately but the indexing process may take a while
+$ ox reindex
+
 # index status
 $ ox status
 > OCFL spec: 1.1
@@ -72,6 +75,12 @@ $ ox ls 990041176260203776
 > [f2fb20b2] meta.json
 > ...
 
+# you can also reindex the object if it hasn't been
+$ ox ls --reindex 990041176260203776
+> [a1139d44] gazetteer.zip 
+> [f2fb20b2] meta.json
+> ...
+
 # save object locally
 $ ox export 990041176260203776 outdir
 > downloading files ...
@@ -79,6 +88,10 @@ $ ox export 990041176260203776 outdir
 ```
 
 See the `clients` directory for gRPC client examples.
+
+## API Documentation
+
+The `ocfl-index` gRPC service definition is distributed using [buf.build](https://buf.build/srerickson/ocfl/docs/main:ocfl.v1#ocfl.v1.IndexService).
 
 ## Development
 
