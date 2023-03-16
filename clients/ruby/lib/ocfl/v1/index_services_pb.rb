@@ -18,16 +18,17 @@ module Ocfl
 
         # Get index status, counts, and storage root details
         rpc :GetStatus, ::Ocfl::V1::GetStatusRequest, ::Ocfl::V1::GetStatusResponse
-        # Start an asynchronous indexing process to scan the storage and ingest
-        # object inventories. IndexAll returns immediately with a status indicating
-        # whether the indexing process was started.
+        # Start an asynchronous indexing process to scan the storage root and ingest
+        # index inventories. Indexed objects not found during the storage root scan
+        # are removed from the index. IndexAll returns immediately with a status
+        # indicating whether the indexing process was started.
         rpc :IndexAll, ::Ocfl::V1::IndexAllRequest, ::Ocfl::V1::IndexAllResponse
         # Index inventories for the specified object ids. Unlike IndexAll, IndexIDs
-        # after the object_ids have been indexed.
+        # returns after the object ids have been indexed.
         rpc :IndexIDs, ::Ocfl::V1::IndexIDsRequest, ::Ocfl::V1::IndexIDsResponse
-        # OCFL Objects in the index
+        # List all objects in the index in lexigraphical order by ID.
         rpc :ListObjects, ::Ocfl::V1::ListObjectsRequest, ::Ocfl::V1::ListObjectsResponse
-        # Details on a specific OCFL object in the index 
+        # Get details for a specific object in the index
         rpc :GetObject, ::Ocfl::V1::GetObjectRequest, ::Ocfl::V1::GetObjectResponse
         # Query the logical state of an OCFL object version
         rpc :GetObjectState, ::Ocfl::V1::GetObjectStateRequest, ::Ocfl::V1::GetObjectStateResponse

@@ -29,16 +29,17 @@ const (
 type IndexServiceClient interface {
 	// Get index status, counts, and storage root details
 	GetStatus(context.Context, *connect_go.Request[v1.GetStatusRequest]) (*connect_go.Response[v1.GetStatusResponse], error)
-	// Start an asynchronous indexing process to scan the storage and ingest
-	// object inventories. IndexAll returns immediately with a status indicating
-	// whether the indexing process was started.
+	// Start an asynchronous indexing process to scan the storage root and ingest
+	// index inventories. Indexed objects not found during the storage root scan
+	// are removed from the index. IndexAll returns immediately with a status
+	// indicating whether the indexing process was started.
 	IndexAll(context.Context, *connect_go.Request[v1.IndexAllRequest]) (*connect_go.Response[v1.IndexAllResponse], error)
 	// Index inventories for the specified object ids. Unlike IndexAll, IndexIDs
-	// after the object_ids have been indexed.
+	// returns after the object ids have been indexed.
 	IndexIDs(context.Context, *connect_go.Request[v1.IndexIDsRequest]) (*connect_go.Response[v1.IndexIDsResponse], error)
-	// OCFL Objects in the index
+	// List all objects in the index in lexigraphical order by ID.
 	ListObjects(context.Context, *connect_go.Request[v1.ListObjectsRequest]) (*connect_go.Response[v1.ListObjectsResponse], error)
-	// Details on a specific OCFL object in the index
+	// Get details for a specific object in the index
 	GetObject(context.Context, *connect_go.Request[v1.GetObjectRequest]) (*connect_go.Response[v1.GetObjectResponse], error)
 	// Query the logical state of an OCFL object version
 	GetObjectState(context.Context, *connect_go.Request[v1.GetObjectStateRequest]) (*connect_go.Response[v1.GetObjectStateResponse], error)
@@ -144,16 +145,17 @@ func (c *indexServiceClient) FollowLogs(ctx context.Context, req *connect_go.Req
 type IndexServiceHandler interface {
 	// Get index status, counts, and storage root details
 	GetStatus(context.Context, *connect_go.Request[v1.GetStatusRequest]) (*connect_go.Response[v1.GetStatusResponse], error)
-	// Start an asynchronous indexing process to scan the storage and ingest
-	// object inventories. IndexAll returns immediately with a status indicating
-	// whether the indexing process was started.
+	// Start an asynchronous indexing process to scan the storage root and ingest
+	// index inventories. Indexed objects not found during the storage root scan
+	// are removed from the index. IndexAll returns immediately with a status
+	// indicating whether the indexing process was started.
 	IndexAll(context.Context, *connect_go.Request[v1.IndexAllRequest]) (*connect_go.Response[v1.IndexAllResponse], error)
 	// Index inventories for the specified object ids. Unlike IndexAll, IndexIDs
-	// after the object_ids have been indexed.
+	// returns after the object ids have been indexed.
 	IndexIDs(context.Context, *connect_go.Request[v1.IndexIDsRequest]) (*connect_go.Response[v1.IndexIDsResponse], error)
-	// OCFL Objects in the index
+	// List all objects in the index in lexigraphical order by ID.
 	ListObjects(context.Context, *connect_go.Request[v1.ListObjectsRequest]) (*connect_go.Response[v1.ListObjectsResponse], error)
-	// Details on a specific OCFL object in the index
+	// Get details for a specific object in the index
 	GetObject(context.Context, *connect_go.Request[v1.GetObjectRequest]) (*connect_go.Response[v1.GetObjectResponse], error)
 	// Query the logical state of an OCFL object version
 	GetObjectState(context.Context, *connect_go.Request[v1.GetObjectStateRequest]) (*connect_go.Response[v1.GetObjectStateResponse], error)
