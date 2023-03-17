@@ -118,7 +118,10 @@ func (db *Backend) GetIndexSummary(ctx context.Context) (index.IndexSummary, err
 	}
 	last, err := qry.GetObjectRootLastIndexedAt(ctx)
 	if err != nil {
-		return index.IndexSummary{}, err
+		if !errors.Is(err, sql.ErrNoRows) {
+			return index.IndexSummary{}, err
+		}
+		last = time.Time{}
 	}
 	summ := index.IndexSummary{
 		NumInventories: int(invs),
