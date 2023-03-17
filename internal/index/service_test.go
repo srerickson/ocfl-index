@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/bufbuild/connect-go"
@@ -11,10 +12,12 @@ import (
 	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
 )
 
-func TestService(t *testing.T) {
-	t.Run("ListObjects", func(t *testing.T) {
-		runServiceTest(t, testListObjectsRequest)
-	})
+func TestServiceGetStatus(t *testing.T) {
+	runServiceTest(t, testGetStatusSimpleRequest)
+}
+
+func TestServiceListObject(t *testing.T) {
+	runServiceTest(t, testListObjectsRequest)
 }
 
 // Helpers below
@@ -42,5 +45,33 @@ func testListObjectsRequest(t *testing.T, ctx context.Context, cli ocflv1connect
 	}
 	if len(rsp.Msg.Objects) == 0 {
 		t.Fatal(errors.New("expected some objects"))
+	}
+}
+
+func testGetStatusSimpleRequest(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient) {
+	req := connect.NewRequest(&api.GetStatusRequest{})
+	rsp, err := cli.GetStatus(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := api.GetStatusResponse{
+		Status:           "ready",
+		StoreSpec:        "1.0",
+		StoreRootPath:    "simple-root",
+		StoreDescription: "",
+		NumObjectPaths:   3,
+		NumInventories:   3,
+	}
+	expEq(t, "status", rsp.Msg.Status, exp.Status)
+	expEq(t, "store spec", rsp.Msg.StoreSpec, exp.StoreSpec)
+	expEq(t, "store root", rsp.Msg.StoreRootPath, exp.StoreRootPath)
+	expEq(t, "store description", rsp.Msg.StoreDescription, exp.StoreDescription)
+	expEq(t, "number inventories", rsp.Msg.NumInventories, exp.NumInventories)
+	expEq(t, "number objects", rsp.Msg.NumObjectPaths, exp.NumObjectPaths)
+}
+func expEq(t *testing.T, desc string, got, expect any) {
+	t.Helper()
+	if !reflect.DeepEqual(got, expect) {
+		t.Fatalf("%s: got='%v', expected='%v'", desc, got, expect)
 	}
 }

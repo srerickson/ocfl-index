@@ -20,6 +20,7 @@ import (
 	"github.com/srerickson/ocfl"
 	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
+	"github.com/srerickson/ocfl/ocflv1"
 )
 
 const downloadPrefix = "/download"
@@ -81,11 +82,24 @@ func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexID
 }
 
 func (srv Service) GetStatus(ctx context.Context, _ *connect.Request[api.GetStatusRequest]) (*connect.Response[api.GetStatusResponse], error) {
-	summ, err := srv.Index.GetStoreSummary(ctx)
+	// FIXME: shouldn't need to load storage root with each call
+	store, err := ocflv1.GetStore(ctx, srv.FS, srv.RootPath)
 	if err != nil {
 		return nil, err
 	}
-	return asSummaryResponse(summ), nil
+	summ, err := srv.Index.GetIndexSummary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	msg := &api.GetStatusResponse{
+		StoreRootPath:    srv.RootPath,
+		StoreDescription: store.Description(),
+		StoreSpec:        store.Spec().String(),
+		NumInventories:   int32(summ.NumInventories),
+		NumObjectPaths:   int32(summ.NumObjects),
+		Status:           srv.Async.status,
+	}
+	return connect.NewResponse(msg), nil
 }
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
@@ -203,30 +217,6 @@ func asGetObjectStateResponse(inf *PathInfo) *connect.Response[api.GetObjectStat
 	return connect.NewResponse(msg)
 
 }
-func asSummaryResponse(summ StoreSummary) *connect.Response[api.GetStatusResponse] {
-	msg := &api.GetStatusResponse{
-		StoreDescription: summ.Description,
-		StoreSpec:        summ.Spec.String(),
-		NumInventories:   int32(summ.NumObjects),
-		StoreRootPath:    summ.RootPath,
-		// IndexedAt:        timestamppb.New(summ.IndexedAt),
-	}
-	return connect.NewResponse(msg)
-}
-
-// func toObjectListRequest(rq ObjectListRequest) *connect.Request[api.ListObjectsRequest] {
-// 	newRQ := &api.ListObjectsRequest{
-// 		Limit: int32(rq.Limit),
-// 		Order: api.ListObjectsRequest_Order(rq.Limit),
-// 	}
-// 	switch c := rq.Cursor.(type) {
-// 	case time.Time:
-// 		newRQ.Cursor = c.Format(time.RFC3339)
-// 	case string:
-// 		newRQ.Cursor = c
-// 	}
-// 	return connect.NewRequest(newRQ)
-// }
 
 func asObjectListResponse(objects *ObjectList) *connect.Response[api.ListObjectsResponse] {
 	msg := &api.ListObjectsResponse{

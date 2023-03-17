@@ -12,6 +12,7 @@ import (
 	api "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 )
 
+const readyStatus = "ready"
 const monMsgBuffLen = 64  // size for async monitor's buffered message channel
 const monMaxSessions = 64 // max number of simultaneous connections to the async monitor
 
@@ -31,6 +32,7 @@ type Async struct {
 
 func NewAsync(ctx context.Context) *Async {
 	async := &Async{
+		status:  readyStatus,
 		done:    make(chan struct{}),
 		tokenCh: make(chan asyncToken, 1),
 		taskCh:  make(chan asyncTask, 1),

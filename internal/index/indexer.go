@@ -181,10 +181,6 @@ func (idx *Indexer) indexInventories(ctx context.Context, opts *IndexOptions) er
 	if err != nil {
 		return err
 	}
-	// store the storage root's info in the database -- do we need to do this?
-	if err := idx.SetStoreInfo(ctx, opts.RootPath, store.Description(), store.Spec()); err != nil {
-		return err
-	}
 	indexingAll := len(opts.ObjectIDs)+len(opts.ObjectPaths) == 0
 	// new transaction in NewTx
 	tx, err := idx.NewTx(ctx)
