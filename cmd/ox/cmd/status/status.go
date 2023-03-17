@@ -39,8 +39,11 @@ func (status Cmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	// TODO: different format options
-	fmt.Println("OCFL spec:", resp.Msg.StoreSpec)
-	fmt.Println("description:", resp.Msg.StoreDescription)
-	fmt.Println("indexed inventories:", resp.Msg.NumInventories)
+	fmt.Println("indexer status:", resp.Msg.Status)
+	fmt.Println("# found objects:", resp.Msg.NumObjectPaths)
+	fmt.Println("# indexed inventories:", resp.Msg.NumInventories)
+	fmt.Println("storage root OCFL spec:", resp.Msg.StoreSpec)
+	fmt.Println("storage root description:", resp.Msg.StoreDescription)
+	fmt.Println("storage root path:", resp.Msg.StoreRootPath)
 	return nil
 }
