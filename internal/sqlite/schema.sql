@@ -6,20 +6,14 @@ create table ocfl_index_schema (
     PRIMARY KEY (major, minor)
 );
 -- only one row
-INSERT INTO ocfl_index_schema (major, minor) values (0,3);
+INSERT INTO ocfl_index_schema (major, minor) values (0,4);
 
--- only support one storage root per index.
-create table ocfl_index_storage_root (
+-- not currently used.
+create table ocfl_index_storage_roots (
   id INTEGER PRIMARY KEY,
-  root_path TEXT NOT NULL, -- TODO: remove b/c typical value is "."
-  description TEXT NOT NULL, -- storage root description
-  spec TEXT NOT NULL, -- storage root's OCFL spec version
-  indexed_at DATETIME, -- date of index
-  --validated_at DATETIME NOT NULL DEFAULT "", -- date of last validation
-  UNIQUE(root_path)
+  name TEXT NOT NULL,   
+  UNIQUE(name)
 );
--- only one storage root per database for now
-INSERT INTO ocfl_index_storage_root (id, root_path, description, spec) VALUES (1, "", "", "");
 
 -- OCFL Object Root Directories
 create table ocfl_index_object_roots (

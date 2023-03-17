@@ -21,30 +21,8 @@ var (
 type Backend interface {
 	NewTx(context.Context) (BackendTx, error)
 
-	// Get/Set Storage Root details in the index FIXME: Do we really need to
-	// keep Storage Root Info in the database? It would make sense to reload the
-	// storage root config from the repository each time the server starts; in
-	// which case, what's the point of replicating it to the index? Can just
-	// keep values in memory. One less thing to keep synced.
-	SetStoreInfo(ctx context.Context, root string, desc string, spec ocfl.Spec) error
-	GetStoreSummary(ctx context.Context) (StoreSummary, error)
-
-	// Set StorageRoot' IndexedAt timestamp to 'now'
-	// FIXME: explict timestamp argument.
-	SetStoreIndexedAt(ctx context.Context) error
-
-	// IndexObjectInventorySize performs the same index operations as
-	// IndexObjectInventory; additionally, it indexes file size information
-	// using sizes, a mapping of manifest content paths to file size. During
-	// indexing, the file size map is merged with previously indexed file size
-	// information so that it is not necessary to include all content paths to
-	// update a previously indexed object. For example, if an object was
-	// previously indexed with this method and then updated with a new version,
-	// re-indexing only requires sizes for new manifest entries in the updated
-	// inventory. If merging the sizes map with previously indexed size values
-	// does not result complete size information for all versions of the object,
-	// the indexing transactions is rolled-back and an error is returned.
-	// IndexObjectInventorySize(ctx context.Context, root string, idxAt time.Time, inv *ocflv1.Inventory, sizes map[string]int64) error
+	// GetIndexSummary returns stats on indexed objects
+	GetIndexSummary(ctx context.Context) (IndexSummary, error)
 
 	// ListObjectRoots is used to iterate over the object root directories in the index.
 	// Paths in the returned list are relative to the storage root.
@@ -93,12 +71,10 @@ type BackendTx interface {
 	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
 }
 
-type StoreSummary struct {
-	RootPath    string
-	Description string
-	Spec        ocfl.Spec
-	NumObjects  int
-	IndexedAt   time.Time
+type IndexSummary struct {
+	NumInventories int       // number of indexed inventories
+	NumObjects     int       // number of known object roots
+	UpdatedAt      time.Time // datetime of last index update
 }
 
 type ObjectSort uint8

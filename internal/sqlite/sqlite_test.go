@@ -19,6 +19,7 @@ import (
 )
 
 func TestInitSchema(t *testing.T) {
+	expSchema := [2]int{0, 4}
 	idx, err := sqlite.Open("file:tmp.sqlite?mode=memory")
 	expNil(t, err)
 	defer idx.Close()
@@ -27,8 +28,8 @@ func TestInitSchema(t *testing.T) {
 	expNil(t, err)
 	major, minor, err := idx.GetSchemaVersion(ctx)
 	expNil(t, err)
-	if major != 0 || minor != 3 {
-		t.Errorf("expected schema version 0.2, got %d.%d", major, minor)
+	if major != expSchema[0] || minor != expSchema[1] {
+		t.Errorf("expected schema version %d.%d, got %d.%d", expSchema[0], expSchema[1], major, minor)
 	}
 }
 
@@ -40,25 +41,20 @@ func TestSummary(t *testing.T) {
 	tx, err := idx.NewTx(ctx)
 	expNil(t, err)
 	defer tx.Rollback()
-
 	m := mock.NewIndexingObject("test-object")
 	expNil(t, tx.IndexObjectInventory(ctx, m.IndexedAt, index.ObjectInventory{
 		Path:      m.RootDir,
 		Inventory: m.Inventory,
 	}))
 	expNil(t, tx.Commit())
-
-	sum := index.StoreSummary{
-		RootPath:    "root-dir",
-		Description: "store description",
-		Spec:        ocfl.Spec{1, 1},
-		NumObjects:  1,
-	}
-	expNil(t, idx.SetStoreInfo(ctx, sum.RootPath, sum.Description, sum.Spec))
-
-	summary, err := idx.GetStoreSummary(ctx)
+	summary, err := idx.GetIndexSummary(ctx)
 	expNil(t, err)
-	expEq(t, "indexed summary", summary, sum)
+	exp := index.IndexSummary{
+		NumInventories: 1,
+		NumObjects:     1,
+		UpdatedAt:      m.IndexedAt.UTC(),
+	}
+	expEq(t, "indexed summary", summary, exp)
 }
 
 func TestIndexObject(t *testing.T) {

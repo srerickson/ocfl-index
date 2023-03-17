@@ -30,7 +30,8 @@ const (
 
 var (
 	// expected schema for index file
-	schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 3}
+	// keep in sync with schema.sql
+	schemaVer = sqlc.OcflIndexSchema{Major: 0, Minor: 4}
 
 	//go:embed schema.sql
 	querySchema string
@@ -105,43 +106,26 @@ func (db *Backend) InitSchema(ctx context.Context) (bool, error) {
 	return true, tx.Commit()
 }
 
-func (db *Backend) GetStoreSummary(ctx context.Context) (index.StoreSummary, error) {
+func (db *Backend) GetIndexSummary(ctx context.Context) (index.IndexSummary, error) {
 	qry := sqlc.New(&db.DB)
-	row, err := qry.GetStorageRoot(ctx)
+	invs, err := qry.CountInventories(ctx)
 	if err != nil {
-		return index.StoreSummary{}, err
+		return index.IndexSummary{}, err
 	}
-	count, err := qry.CountInventories(ctx)
+	objs, err := qry.CountObjectRoots(ctx)
 	if err != nil {
-		return index.StoreSummary{}, err
+		return index.IndexSummary{}, err
 	}
-	summ := index.StoreSummary{
-		Description: row.Description,
-		RootPath:    row.RootPath,
-		NumObjects:  int(count),
+	last, err := qry.GetObjectRootLastIndexedAt(ctx)
+	if err != nil {
+		return index.IndexSummary{}, err
 	}
-	if row.IndexedAt.Valid {
-		summ.IndexedAt = row.IndexedAt.Time
-	}
-	if row.Spec != "" {
-		if err := ocfl.ParseSpec(row.Spec, &summ.Spec); err != nil {
-			return index.StoreSummary{}, err
-		}
+	summ := index.IndexSummary{
+		NumInventories: int(invs),
+		NumObjects:     int(objs),
+		UpdatedAt:      last,
 	}
 	return summ, nil
-}
-
-// Consider removing this
-func (db *Backend) SetStoreInfo(ctx context.Context, root string, desc string, spec ocfl.Spec) error {
-	return sqlc.New(&db.DB).SetStorageRoot(ctx, sqlc.SetStorageRootParams{
-		Description: desc,
-		RootPath:    root,
-		Spec:        spec.String(),
-	})
-}
-
-func (db *Backend) SetStoreIndexedAt(ctx context.Context) error {
-	return sqlc.New(&db.DB).SetStorageRootIndexed(ctx)
 }
 
 // List entries for object roots table

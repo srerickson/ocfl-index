@@ -51,11 +51,8 @@ type OcflIndexSchema struct {
 }
 
 type OcflIndexStorageRoot struct {
-	ID          int64
-	RootPath    string
-	Description string
-	Spec        string
-	IndexedAt   sql.NullTime
+	ID   int64
+	Name string
 }
 
 type OcflIndexVersion struct {

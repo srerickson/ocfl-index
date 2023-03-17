@@ -42,10 +42,11 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		return nil, fmt.Errorf("initializing fixture index: %w", err)
 	}
 	srv := &index.Service{
-		Index: idx,
-		FS:    fsys,
-		Log:   logr.Discard(),
-		Async: index.NewAsync(ctx),
+		Index:    idx,
+		FS:       fsys,
+		RootPath: fixture,
+		Log:      logr.Discard(),
+		Async:    index.NewAsync(ctx),
 	}
 	opts := &index.IndexOptions{
 		FS:       fsys,
