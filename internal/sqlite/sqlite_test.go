@@ -20,12 +20,10 @@ import (
 
 func TestInitSchema(t *testing.T) {
 	expSchema := [2]int{0, 4}
-	idx, err := sqlite.Open("file:tmp.sqlite?mode=memory")
+	ctx := context.Background()
+	idx, err := newSqliteIndex(ctx, t.Name())
 	expNil(t, err)
 	defer idx.Close()
-	ctx := context.Background()
-	_, err = idx.InitSchema(ctx)
-	expNil(t, err)
 	major, minor, err := idx.GetSchemaVersion(ctx)
 	expNil(t, err)
 	if major != expSchema[0] || minor != expSchema[1] {
@@ -33,28 +31,42 @@ func TestInitSchema(t *testing.T) {
 	}
 }
 
-func TestSummary(t *testing.T) {
+func TestGetIndexSummary(t *testing.T) {
 	ctx := context.Background()
-	idx, err := newSqliteIndex(ctx, t.Name())
-	expNil(t, err)
-	defer idx.Close()
-	tx, err := idx.NewTx(ctx)
-	expNil(t, err)
-	defer tx.Rollback()
-	m := mock.NewIndexingObject("test-object")
-	expNil(t, tx.IndexObjectInventory(ctx, m.IndexedAt, index.ObjectInventory{
-		Path:      m.RootDir,
-		Inventory: m.Inventory,
-	}))
-	expNil(t, tx.Commit())
-	summary, err := idx.GetIndexSummary(ctx)
-	expNil(t, err)
-	exp := index.IndexSummary{
-		NumInventories: 1,
-		NumObjects:     1,
-		UpdatedAt:      m.IndexedAt.UTC(),
-	}
-	expEq(t, "indexed summary", summary, exp)
+	t.Run("single object", func(t *testing.T) {
+		m := mock.NewIndexingObject(t.Name())
+		idx, err := setupSqliteIndex(ctx, t.Name(), func(tx index.BackendTx) error {
+			return tx.IndexObjectInventory(ctx, m.IndexedAt, index.ObjectInventory{
+				Path:      m.RootDir,
+				Inventory: m.Inventory,
+			})
+		})
+		expNil(t, err)
+		summary, err := idx.GetIndexSummary(ctx)
+		expNil(t, err)
+		exp := index.IndexSummary{
+			NumInventories: 1,
+			NumObjects:     1,
+			UpdatedAt:      m.IndexedAt.UTC(),
+		}
+		expEq(t, "indexed summary", summary, exp)
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		idx, err := setupSqliteIndex(ctx, t.Name(), func(tx index.BackendTx) error {
+			return nil
+		})
+		expNil(t, err)
+		summary, err := idx.GetIndexSummary(ctx)
+		expNil(t, err)
+		exp := index.IndexSummary{
+			NumInventories: 0,
+			NumObjects:     0,
+			UpdatedAt:      time.Time{},
+		}
+		expEq(t, "indexed summary", summary, exp)
+	})
+
 }
 
 func TestIndexObject(t *testing.T) {
@@ -342,6 +354,25 @@ func newSqliteIndex(ctx context.Context, name string) (*sqlite.Backend, error) {
 		return nil, err
 	}
 	return idx, nil
+}
+
+func setupSqliteIndex(ctx context.Context, name string, setup func(tx index.BackendTx) error) (*sqlite.Backend, error) {
+	db, err := newSqliteIndex(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := db.NewTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := setup(tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func expNil(t *testing.T, val any) {
