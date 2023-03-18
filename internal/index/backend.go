@@ -29,7 +29,7 @@ type Backend interface {
 	ListObjectRoots(ctx context.Context, limit int, cursor string) (*ObjectRootList, error)
 
 	// All OCFL Object in the index
-	ListObjects(ctx context.Context, order ObjectSort, limit int, cursor string) (*ObjectList, error)
+	ListObjects(ctx context.Context, prefix string, limit int, cursor string) (*ObjectList, error)
 	GetObject(ctx context.Context, objectID string) (*Object, error)
 	GetObjectByPath(ctx context.Context, rootPath string) (*Object, error)
 
@@ -75,22 +75,6 @@ type IndexSummary struct {
 	NumInventories int       // number of indexed inventories
 	NumObjects     int       // number of known object roots
 	UpdatedAt      time.Time // datetime of last index update
-}
-
-type ObjectSort uint8
-
-const (
-	ASC ObjectSort = iota
-	DESC
-)
-const (
-	SortID          = ObjectSort(iota << 1)
-	SortV1Created   = ObjectSort(iota << 1)
-	SortHeadCreated = ObjectSort(iota << 1)
-)
-
-func (s ObjectSort) Desc() bool {
-	return s&DESC == DESC
 }
 
 type ObjectRoot struct {

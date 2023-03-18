@@ -103,7 +103,7 @@ func (srv Service) GetStatus(ctx context.Context, _ *connect.Request[api.GetStat
 }
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
-	objects, err := srv.Index.ListObjects(ctx, SortID, int(rq.Msg.PageSize), rq.Msg.PageToken)
+	objects, err := srv.Index.ListObjects(ctx, "", int(rq.Msg.PageSize), rq.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}

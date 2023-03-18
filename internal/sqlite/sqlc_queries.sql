@@ -70,6 +70,44 @@ SELECT invs.*, objs.path FROM ocfl_index_inventories invs
 INNER JOIN ocfl_index_object_roots objs ON objs.id = invs.root_id
 WHERE objs.path = ?;
 
+-- name: ListInventoriesPrefix :many
+SELECT 
+    invs.id,
+    invs.ocfl_id,
+    root.path,
+    invs.spec,
+    invs.head,
+    v1.created v1_created,
+    head.created head_created
+FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots root
+    ON invs.root_id = root.id
+INNER JOIN ocfl_index_versions head
+    ON invs.id = head.inventory_id AND invs.head = head.name
+INNER JOIN ocfl_index_versions v1
+    ON invs.id = v1.inventory_id AND v1.num = 1
+WHERE invs.ocfl_id > ?1 AND invs.ocfl_id LIKE ?2 || '%' ESCAPE '\'
+ORDER BY invs.ocfl_id ASC LIMIT ?3;
+
+-- name: ListInventories :many
+SELECT 
+    invs.id,
+    invs.ocfl_id,
+    root.path,
+    invs.spec,
+    invs.head,
+    v1.created v1_created,
+    head.created head_created
+FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots root
+    ON invs.root_id = root.id
+INNER JOIN ocfl_index_versions head
+    ON invs.id = head.inventory_id AND invs.head = head.name
+INNER JOIN ocfl_index_versions v1
+    ON invs.id = v1.inventory_id AND v1.num = 1
+WHERE invs.ocfl_id > ?1
+ORDER BY invs.ocfl_id ASC LIMIT ?2;
+
 -- name: CountInventories :one
 SELECT COUNT(id) from ocfl_index_inventories;
 
