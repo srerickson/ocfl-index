@@ -1,12 +1,9 @@
 package sqlite
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
-	"encoding/csv"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -163,110 +160,48 @@ func listObjectRootsTx(ctx context.Context, qry *sqlc.Queries, limit int, cursor
 }
 
 // We can't use sqlc here because we need to alter the query for different sort/cursor values.
-func (idx *Backend) ListObjects(ctx context.Context, sort index.ObjectSort, limit int, cursor string) (*index.ObjectList, error) {
+func (idx *Backend) ListObjects(ctx context.Context, prefix string, limit int, cursor string) (*index.ObjectList, error) {
 	if limit < 1 || limit > 1000 {
 		limit = defaultLimit
 	}
-	// TODO implement additional sorts
-	// TODO check limit value
-	// TODO parse cursor
-	cursorID, _, err := parseCursor(cursor)
+	qry := sqlc.New(&idx.DB)
+	args := sqlc.ListInventoriesPrefixParams{
+		OcflID:   cursor,
+		OcflID_2: prefix,
+		Limit:    int64(limit + 1), // check for next page
+	}
+	rows, err := qry.ListInventoriesPrefix(ctx, args)
 	if err != nil {
 		return nil, err
 	}
-	var rows *sql.Rows
-	template := `SELECT 
-			objects.id,
-			objects.ocfl_id,
-			objects.spec,
-			objects.head,
-			v1.created v1_created,
-			head.created head_created
-		FROM ocfl_index_inventories objects
-		INNER JOIN ocfl_index_versions head
-			ON objects.id = head.inventory_id AND objects.head = head.name
-		INNER JOIN ocfl_index_versions v1
-			ON objects.id = v1.inventory_id AND v1.num = 1
-		%s LIMIT ?;`
-	switch sort {
-	case index.SortV1Created:
-		// Something like this:
-		// SELECT
-		//     head.created || objects.id AS cursor, -- cursor is unique (date+id)
-		//     objects.ocfl_id,
-		//     v1.created v1_created,
-		//     head.created head_created
-		// FROM ocfl_index_inventories objects
-		// INNER JOIN ocfl_index_versions head
-		//     ON objects.id = head.object_id AND objects.head = head.name
-		// INNER JOIN ocfl_index_versions v1
-		//     ON objects.id = v1.object_id AND v1.num = 1
-		// WHERE cursor < '2022-11-10 06:50:29.08237092 +0000 UTC66603' ORDER BY cursor DESC LIMIT 500;
-		return nil, errors.New("v1 created sort not implemented")
-	case index.SortHeadCreated:
-		return nil, errors.New("head created sort not implemented")
-	default:
-		// Sort by ID
-		if cursor == "" {
-			where := "ORDER BY objects.ocfl_id"
-			if sort.Desc() {
-				where += " DESC"
-			}
-			rows, err = idx.QueryContext(ctx, fmt.Sprintf(template, where), limit)
-			break
-		}
-		var where string
-		if sort.Desc() {
-			where = "WHERE objects.ocfl_id < ? ORDER BY objects.ocfl_id DESC"
-		} else {
-			where = "WHERE objects.ocfl_id > ? ORDER BY objects.ocfl_id"
-		}
-		rows, err = idx.QueryContext(ctx, fmt.Sprintf(template, where), cursorID, limit)
+	resultLen := len(rows)
+	if resultLen == 0 {
+		return &index.ObjectList{}, nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("during list objects query: %w", err)
+	nextPage := ""
+	if resultLen > limit {
+		// there are additional results beyond the limit, so set next page
+		// cursor to the last ocflid of the results we return (2nd from last).
+		resultLen = limit
+		nextPage = rows[len(rows)-2].OcflID
 	}
-	defer rows.Close()
-	objects := make([]index.ObjectListItem, 0, limit)
-	for rows.Next() {
-		var id int64
-		var spec, head string
-		var obj index.ObjectListItem
-		if err := rows.Scan(
-			&id,
-			&obj.ID,
-			&spec,
-			&head,
-			&obj.V1Created,
-			&obj.HeadCreated,
-		); err != nil {
-			return nil, err
+	objects := make([]index.ObjectListItem, resultLen)
+	for i := 0; i < resultLen; i++ {
+		obj := index.ObjectListItem{
+			RootPath:    rows[i].Path,
+			ID:          rows[i].OcflID,
+			V1Created:   rows[i].Created,
+			HeadCreated: rows[i].Created_2,
 		}
-		if err := ocfl.ParseVNum(head, &obj.Head); err != nil {
-			return nil, err
+		if err := ocfl.ParseVNum(rows[i].Head, &obj.Head); err != nil {
+			return nil, fmt.Errorf("parsing indexed inventory head value: %w", err)
 		}
-		if err := ocfl.ParseSpec(spec, &obj.Spec); err != nil {
-			return nil, err
+		if err := ocfl.ParseSpec(rows[i].Spec, &obj.Spec); err != nil {
+			return nil, fmt.Errorf("parsing indexed inventory spec value: %w", err)
 		}
-		objects = append(objects, obj)
+		objects[i] = obj
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	list := &index.ObjectList{Objects: objects}
-	if l := len(objects); l > 0 {
-		obj := objects[l-1]
-		var t time.Time
-		if sort&index.SortHeadCreated > 0 {
-			t = obj.HeadCreated
-		} else if sort&index.SortV1Created > 0 {
-			t = obj.V1Created
-		}
-		list.NextCursor = newCursor(obj.ID, t)
-	}
+	list := &index.ObjectList{Objects: objects, NextCursor: nextPage}
 	return list, nil
 }
 
@@ -486,39 +421,6 @@ func (db *Backend) existingTables(ctx context.Context) ([]string, error) {
 		}
 	}
 	return tables, nil
-}
-
-func parseCursor(cursor string) (string, time.Time, error) {
-	if cursor == "" {
-		return "", time.Time{}, nil
-	}
-	byts, err := base64.StdEncoding.DecodeString(cursor)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("cursor format error: %w", err)
-	}
-	vals, err := csv.NewReader(bytes.NewReader(byts)).Read()
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("cursor format error: %w", err)
-	}
-	if len(vals) != 2 {
-		return "", time.Time{}, errors.New("cursor format error: expected two values")
-	}
-	id := vals[0]
-	t, err := time.Parse(time.RFC3339, vals[1])
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("cursor format error: %w", err)
-	}
-	return id, t, nil
-}
-
-func newCursor(id string, t time.Time) string {
-	byt := &bytes.Buffer{}
-	w := csv.NewWriter(byt)
-	if err := w.Write([]string{id, t.Format(time.RFC3339)}); err != nil {
-		panic(err)
-	}
-	w.Flush()
-	return base64.StdEncoding.EncodeToString(byt.Bytes())
 }
 
 func (db *Backend) DEBUG_AllInventories(ctx context.Context) ([]sqlc.OcflIndexInventory, error) {

@@ -491,6 +491,139 @@ func (q *Queries) InsertVersion(ctx context.Context, arg InsertVersionParams) (i
 	return result.LastInsertId()
 }
 
+const listInventories = `-- name: ListInventories :many
+SELECT 
+    invs.id,
+    invs.ocfl_id,
+    root.path,
+    invs.spec,
+    invs.head,
+    v1.created v1_created,
+    head.created head_created
+FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots root
+    ON invs.root_id = root.id
+INNER JOIN ocfl_index_versions head
+    ON invs.id = head.inventory_id AND invs.head = head.name
+INNER JOIN ocfl_index_versions v1
+    ON invs.id = v1.inventory_id AND v1.num = 1
+WHERE invs.ocfl_id > ?1
+ORDER BY invs.ocfl_id ASC LIMIT ?2
+`
+
+type ListInventoriesParams struct {
+	OcflID string
+	Limit  int64
+}
+
+type ListInventoriesRow struct {
+	ID        int64
+	OcflID    string
+	Path      string
+	Spec      string
+	Head      string
+	Created   time.Time
+	Created_2 time.Time
+}
+
+func (q *Queries) ListInventories(ctx context.Context, arg ListInventoriesParams) ([]ListInventoriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInventories, arg.OcflID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInventoriesRow
+	for rows.Next() {
+		var i ListInventoriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OcflID,
+			&i.Path,
+			&i.Spec,
+			&i.Head,
+			&i.Created,
+			&i.Created_2,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInventoriesPrefix = `-- name: ListInventoriesPrefix :many
+SELECT 
+    invs.id,
+    invs.ocfl_id,
+    root.path,
+    invs.spec,
+    invs.head,
+    v1.created v1_created,
+    head.created head_created
+FROM ocfl_index_inventories invs
+INNER JOIN ocfl_index_object_roots root
+    ON invs.root_id = root.id
+INNER JOIN ocfl_index_versions head
+    ON invs.id = head.inventory_id AND invs.head = head.name
+INNER JOIN ocfl_index_versions v1
+    ON invs.id = v1.inventory_id AND v1.num = 1
+WHERE invs.ocfl_id > ?1 AND invs.ocfl_id LIKE ?2 || '%' ESCAPE '\'
+ORDER BY invs.ocfl_id ASC LIMIT ?3
+`
+
+type ListInventoriesPrefixParams struct {
+	OcflID   string
+	OcflID_2 string
+	Limit    int64
+}
+
+type ListInventoriesPrefixRow struct {
+	ID        int64
+	OcflID    string
+	Path      string
+	Spec      string
+	Head      string
+	Created   time.Time
+	Created_2 time.Time
+}
+
+func (q *Queries) ListInventoriesPrefix(ctx context.Context, arg ListInventoriesPrefixParams) ([]ListInventoriesPrefixRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInventoriesPrefix, arg.OcflID, arg.OcflID_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInventoriesPrefixRow
+	for rows.Next() {
+		var i ListInventoriesPrefixRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OcflID,
+			&i.Path,
+			&i.Spec,
+			&i.Head,
+			&i.Created,
+			&i.Created_2,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listObjectContentSize = `-- name: ListObjectContentSize :many
 SELECT cont.file_path, nodes.size from ocfl_index_content_paths cont
 INNER JOIN ocfl_index_nodes nodes on nodes.id = cont.node_id

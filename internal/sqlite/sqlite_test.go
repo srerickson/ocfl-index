@@ -204,92 +204,83 @@ func TestRemoveObjectsBefore(t *testing.T) {
 
 func TestListObjects(t *testing.T) {
 	ctx := context.Background()
-	idx, err := sqlite.Open("file:test_index_inventory.sqlite?mode=memory")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer idx.Close()
-	_, err = idx.InitSchema(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, err := idx.NewTx(ctx)
-	expNil(t, err)
-	defer tx.Rollback()
-	const numInvs = 27
-	idxObjs := make([]*mock.IndexingObject, numInvs)
-	letters := []rune("abcdefghijklmnopqrstuvqwxyz")
-	for i := 0; i < len(idxObjs); i++ {
-		l := string(letters[i%len(letters)])
-		idxObjs[i] = mock.NewIndexingObject(fmt.Sprintf("%s-test-%d", l, i))
-
-		err := tx.IndexObjectInventory(ctx, idxObjs[i].IndexedAt, index.ObjectInventory{
-			Inventory: idxObjs[i].Inventory,
-			Path:      idxObjs[i].RootDir,
+	t.Run("empty", func(t *testing.T) {
+		idx, err := setupSqliteIndex(ctx, t.Name(), func(tx index.BackendTx) error {
+			return nil
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	expNil(t, tx.Commit())
-
-	t.Run("sort by ID, ASC", func(t *testing.T) {
-		sort.Slice(idxObjs, func(i, j int) bool {
-			return idxObjs[i].Inventory.ID < idxObjs[j].Inventory.ID
-		})
-		allObjects := make([]index.ObjectListItem, 0, len(idxObjs))
-		cursor := ""
-		limit := 3
-		sort := index.SortID | index.ASC
-		for {
-			list, err := idx.ListObjects(ctx, sort, limit, cursor)
-			if err != nil {
-				t.Fatal(err)
+		expNil(t, err)
+		_, err = idx.ListObjects(ctx, "", 10, "")
+		expNil(t, err)
+	})
+	t.Run("no prefix", func(t *testing.T) {
+		const numInvs = 27
+		mocks := make([]*mock.IndexingObject, numInvs)
+		idx, err := setupSqliteIndex(ctx, t.Name(), func(tx index.BackendTx) error {
+			letters := []rune("abcdefghijklmnopqrstuvqwxyz")
+			for i := 0; i < len(mocks); i++ {
+				id := fmt.Sprintf("%c-test-%d", letters[i%len(letters)], i)
+				m := mock.NewIndexingObject(id, mock.WithHead(ocfl.V(2)))
+				err := tx.IndexObjectInventory(ctx, m.IndexedAt, index.ObjectInventory{
+					Inventory: m.Inventory,
+					Path:      m.RootDir,
+				})
+				if err != nil {
+					return err
+				}
+				mocks[i] = m
 			}
-			if len(list.Objects) == 0 {
+			return nil
+		})
+		expNil(t, err)
+		sort.Slice(mocks, func(i, j int) bool {
+			return mocks[i].Inventory.ID < mocks[j].Inventory.ID
+		})
+		objs := []index.ObjectListItem{}
+		cursor := ""
+		for {
+			results, err := idx.ListObjects(ctx, "", 5, cursor)
+			expNil(t, err)
+			objs = append(objs, results.Objects...)
+			cursor = results.NextCursor
+			if cursor == "" {
 				break
 			}
-			allObjects = append(allObjects, list.Objects...)
-			cursor = list.NextCursor
 		}
-		if l := len(allObjects); l != len(idxObjs) {
-			t.Fatal("wrong number of total objects")
-		}
-		for i := range allObjects {
-			if allObjects[i].ID != idxObjs[i].Inventory.ID {
-				t.Fatal("failed sort")
-			}
+		expEq(t, "number of objects in result", len(objs), len(mocks))
+		for i, m := range mocks {
+			expEq(t, "result id matches mock id", objs[i].ID, m.Inventory.ID)
+			expEq(t, "result root matches mock root", objs[i].RootPath, m.RootDir)
+			expEq(t, "result spec matches mock spec", objs[i].Spec, m.Inventory.Type.Spec)
+			expEq(t, "result head matches mock head", objs[i].Head, m.Inventory.Head)
+			expEq(t, "result v1 created match mock v1 created", objs[i].V1Created, m.Inventory.Versions[ocfl.V(1)].Created)
+			expEq(t, "result head created match mock v2 created", objs[i].HeadCreated, m.Inventory.Versions[ocfl.V(2)].Created)
 		}
 	})
 
-	t.Run("sort by ID, DESC", func(t *testing.T) {
-		sort.Slice(idxObjs, func(i, j int) bool {
-			return idxObjs[i].Inventory.ID > idxObjs[j].Inventory.ID
+	t.Run("with prefix", func(t *testing.T) {
+		const numInvs = 54
+		idx, err := setupSqliteIndex(ctx, t.Name(), func(tx index.BackendTx) error {
+			letters := []rune("abcdefghijklmnopqrstuvqwxyz")
+			for i := 0; i < numInvs; i++ {
+				id := fmt.Sprintf("%c-test-%d", letters[i%len(letters)], i)
+				m := mock.NewIndexingObject(id, mock.WithHead(ocfl.V(2)))
+				err := tx.IndexObjectInventory(ctx, m.IndexedAt, index.ObjectInventory{
+					Inventory: m.Inventory,
+					Path:      m.RootDir,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
 		})
-		allObjects := make([]index.ObjectListItem, 0, len(idxObjs))
-		cursor := ""
-		limit := 3
-		sort := index.SortID | index.DESC
-		for {
-			list, err := idx.ListObjects(ctx, sort, limit, cursor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(list.Objects) == 0 {
-				break
-			}
-			allObjects = append(allObjects, list.Objects...)
-			cursor = list.NextCursor
-		}
-		if l := len(allObjects); l != len(idxObjs) {
-			t.Fatalf("wrong number of total objects: got %d, want %d", l, len(idxObjs))
-		}
-		for i := range allObjects {
-			if allObjects[i].ID != idxObjs[i].Inventory.ID {
-				t.Fatal("failed sort")
-			}
-		}
+		expNil(t, err)
+		results, err := idx.ListObjects(ctx, "a", 5, "")
+		expNil(t, err)
+		expEq(t, "number of results", len(results.Objects), 2)
+		expEq(t, "next page cursor", results.NextCursor, "")
 	})
+
 }
 
 func TestGetObjectState(t *testing.T) {
