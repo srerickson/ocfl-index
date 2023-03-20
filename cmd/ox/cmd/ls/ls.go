@@ -104,9 +104,14 @@ func (ls *Cmd) Run(ctx context.Context, args []string) error {
 func (ls Cmd) ValidArgsFunction() func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var comps []string
-		if len(args) == 1 {
-			// return directory list matches
-			comps, _ = ls.listEntriesPrefix(cmd.Context(), args[0], toComplete)
+		switch len(args) {
+		case 0:
+			// complete object id
+			comps, _ = ls.completeObjectIDsPrefix(cmd.Context(), toComplete)
+		case 1:
+			// complete path
+			objectID := args[0]
+			comps, _ = ls.completePathPrefix(cmd.Context(), objectID, toComplete)
 		}
 		return comps, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -140,8 +145,30 @@ func (ls Cmd) listObjectVersions(ctx context.Context) error {
 	return nil
 }
 
-// used for tab completion
-func (ls Cmd) listEntriesPrefix(ctx context.Context, id string, prefix string) ([]string, error) {
+// used for tab completion of object id
+func (ls Cmd) completeObjectIDsPrefix(ctx context.Context, prefix string) ([]string, error) {
+	cli := ls.root.ServiceClient()
+	req := ocflv1.ListObjectsRequest{
+		PageSize: 1000,
+		IdPrefix: prefix,
+	}
+	resp, err := cli.ListObjects(ctx, connect.NewRequest(&req))
+	if err != nil {
+		return nil, err
+	}
+	// if there are more than a thousand entries, no completion
+	if resp.Msg.NextPageToken != "" {
+		return nil, nil
+	}
+	ids := make([]string, len(resp.Msg.Objects))
+	for i, obj := range resp.Msg.Objects {
+		ids[i] = obj.ObjectId
+	}
+	return ids, nil
+}
+
+// used for tab completion of path argument
+func (ls Cmd) completePathPrefix(ctx context.Context, id string, prefix string) ([]string, error) {
 	client := ls.root.ServiceClient()
 	var entries []string
 	dir := path.Dir(prefix)
