@@ -5,14 +5,18 @@ package root
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 
 	"github.com/bufbuild/connect-go"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/srerickson/ocfl"
 	ocflv1 "github.com/srerickson/ocfl-index/gen/ocfl/v1"
 	"github.com/srerickson/ocfl-index/gen/ocfl/v1/ocflv1connect"
+	"github.com/srerickson/ocfl-index/internal/index"
 )
 
 const (
@@ -77,7 +81,7 @@ func getenvDefault(key, def string) string {
 	return def
 }
 
-func (ox *Cmd) FollowLogs(ctx context.Context) error {
+func (ox Cmd) FollowLogs(ctx context.Context) error {
 	cli := ox.ServiceClient()
 	rq := ocflv1.FollowLogsRequest{}
 	stream, err := cli.FollowLogs(ctx, connect.NewRequest(&rq))
@@ -92,4 +96,63 @@ func (ox *Cmd) FollowLogs(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (ox Cmd) ListObjects(prefix string, pageSize int) *ListObjectsIterator {
+	return &ListObjectsIterator{
+		client: ox.ServiceClient(),
+		limit:  pageSize,
+		prefix: prefix,
+	}
+}
+
+type ListObjectsIterator struct {
+	client   ocflv1connect.IndexServiceClient
+	prefix   string
+	limit    int
+	nextPage string
+	results  *ocflv1.ListObjectsResponse
+	i        int // index of the object returned by call to Next()
+}
+
+func (pager *ListObjectsIterator) Next(ctx context.Context) (*index.ObjectListItem, error) {
+	if pager.needNextPage() {
+		pager.i = 0 // resets
+		req := ocflv1.ListObjectsRequest{
+			PageToken: pager.nextPage,
+			PageSize:  int32(pager.limit),
+			IdPrefix:  pager.prefix,
+		}
+		resp, err := pager.client.ListObjects(ctx, connect.NewRequest(&req))
+		if err != nil {
+			return nil, err
+		}
+		pager.results = resp.Msg
+		pager.nextPage = pager.results.NextPageToken
+	}
+	if pager.i >= len(pager.results.Objects) {
+		return nil, io.EOF
+	}
+	item := pager.results.Objects[pager.i]
+	pager.i += 1
+	obj := &index.ObjectListItem{
+		//RootPath: item.,
+		ID:          item.ObjectId,
+		V1Created:   item.V1Created.AsTime(),
+		HeadCreated: item.V1Created.AsTime(),
+	}
+	if err := ocfl.ParseVNum(item.Head, &obj.Head); err != nil {
+		return nil, fmt.Errorf("received object has invalid head: %w", err)
+	}
+	return obj, nil
+}
+
+func (pager *ListObjectsIterator) needNextPage() bool {
+	if pager.results == nil {
+		return true
+	}
+	if pager.nextPage != "" && pager.i == len(pager.results.Objects) && pager.i > 0 {
+		return true
+	}
+	return false
 }

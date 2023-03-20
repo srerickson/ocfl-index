@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"time"
@@ -112,29 +113,16 @@ func (ls Cmd) ValidArgsFunction() func(*cobra.Command, []string, string) ([]stri
 }
 
 func (ls Cmd) listObjects(ctx context.Context) error {
-	client := ls.root.ServiceClient()
-	cursor := ""
+	iter := ls.root.ListObjects("", 1000)
 	for {
-		req := connect.NewRequest(&ocflv1.ListObjectsRequest{
-			PageToken: cursor,
-			PageSize:  1000,
-		})
-		resp, err := client.ListObjects(ctx, req)
+		obj, err := iter.Next(ctx)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return err
 		}
-		objects := resp.Msg.Objects
-		if len(objects) == 0 {
-			break
-		}
-		for _, obj := range objects {
-			// TODO: formatting
-			fmt.Println(obj.ObjectId, obj.Head, obj.GetHeadCreated().AsTime().Format(time.RFC3339))
-		}
-		if resp.Msg.NextPageToken == "" {
-			break
-		}
-		cursor = resp.Msg.NextPageToken
+		fmt.Println(obj.ID, obj.Head, obj.HeadCreated.Format(time.RFC822))
 	}
 	return nil
 }
@@ -198,10 +186,10 @@ func (ls Cmd) listEntriesPrefix(ctx context.Context, id string, prefix string) (
 	return entries, nil
 }
 
-func (ls Cmd) doReindex(ctx context.Context, id string) error {
+func (ls Cmd) doReindex(ctx context.Context, ids ...string) error {
 	client := ls.root.ServiceClient()
 	rq := &ocflv1.IndexIDsRequest{
-		ObjectIds: []string{id},
+		ObjectIds: ids,
 	}
 	// without an object id, list object ids in the index
 	_, err := client.IndexIDs(ctx, connect.NewRequest(rq))
