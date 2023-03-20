@@ -56,8 +56,9 @@ message IndexIDsRequest{
 message IndexIDsResponse{}
 
 message ListObjectsRequest {
-  string page_token = 1;
-  int32 page_size = 2;
+  string page_token = 1; // for pagination
+  int32 page_size = 2;   // max 1000
+  string id_prefix = 3;  // filter objects with prefix
 }
 
 message ListObjectsResponse {
