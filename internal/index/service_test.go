@@ -20,6 +20,10 @@ func TestServiceListObject(t *testing.T) {
 	runServiceTest(t, testListObjectsRequest)
 }
 
+func TestServiceGetObejct(t *testing.T) {
+	runServiceTest(t, testGetObjectSimpleRequest)
+}
+
 // Helpers below
 
 type serviceTestFunc func(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient)
@@ -36,7 +40,7 @@ func runServiceTest(t *testing.T, fn serviceTestFunc) {
 	fn(t, ctx, cli)
 }
 
-// testListObjectsRequest
+// ListObjectsRequest
 func testListObjectsRequest(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient) {
 	req := connect.NewRequest(&api.ListObjectsRequest{})
 	rsp, err := cli.ListObjects(ctx, req)
@@ -48,6 +52,7 @@ func testListObjectsRequest(t *testing.T, ctx context.Context, cli ocflv1connect
 	}
 }
 
+// GetStatusRequest
 func testGetStatusSimpleRequest(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient) {
 	req := connect.NewRequest(&api.GetStatusRequest{})
 	rsp, err := cli.GetStatus(ctx, req)
@@ -69,6 +74,21 @@ func testGetStatusSimpleRequest(t *testing.T, ctx context.Context, cli ocflv1con
 	expEq(t, "number inventories", rsp.Msg.NumInventories, exp.NumInventories)
 	expEq(t, "number objects", rsp.Msg.NumObjectPaths, exp.NumObjectPaths)
 }
+
+// GetObjectRequest
+func testGetObjectSimpleRequest(t *testing.T, ctx context.Context, cli ocflv1connect.IndexServiceClient) {
+	req := connect.NewRequest(&api.GetObjectRequest{ObjectId: "ark:/12345/bcd987"})
+	rsp, err := cli.GetObject(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expEq(t, "object_id", rsp.Msg.ObjectId, "ark:/12345/bcd987")
+	expEq(t, "algorith", rsp.Msg.DigestAlgorithm, "sha512")
+	expEq(t, "object root", rsp.Msg.RootPath, "ark%3A%2F12345%2Fbcd987")
+	expEq(t, "spec", rsp.Msg.Spec, "1.0")
+	expEq(t, "number version", len(rsp.Msg.Versions), 3)
+}
+
 func expEq(t *testing.T, desc string, got, expect any) {
 	t.Helper()
 	if !reflect.DeepEqual(got, expect) {

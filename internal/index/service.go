@@ -236,8 +236,10 @@ func asObjectListResponse(objects *ObjectList) *connect.Response[api.ListObjects
 
 func asGetObjectResponse(obj *Object) *connect.Response[api.GetObjectResponse] {
 	msg := &api.GetObjectResponse{
-		ObjectId: obj.ID,
-		RootPath: obj.RootPath,
+		ObjectId:        obj.ID,
+		RootPath:        obj.RootPath,
+		DigestAlgorithm: obj.DigestAlgorithm,
+		Spec:            obj.Spec.String(),
 	}
 	msg.Versions = make([]*api.GetObjectResponse_Version, len(obj.Versions))
 	for i, v := range obj.Versions {
