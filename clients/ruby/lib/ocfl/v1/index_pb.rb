@@ -29,6 +29,7 @@ Google::Protobuf::DescriptorPool.generated_pool.build do
     add_message "ocfl.v1.ListObjectsRequest" do
       optional :page_token, :string, 1, json_name: "pageToken"
       optional :page_size, :int32, 2, json_name: "pageSize"
+      optional :id_prefix, :string, 3, json_name: "idPrefix"
     end
     add_message "ocfl.v1.ListObjectsResponse" do
       repeated :objects, :message, 1, "ocfl.v1.ListObjectsResponse.Object", json_name: "objects"
