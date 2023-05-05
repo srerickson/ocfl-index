@@ -5,6 +5,7 @@ package root
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,8 @@ type Cmd struct {
 	Log        logr.Logger
 	RemoteURL  string
 	httpClient *http.Client
+	certFile   string
+	keyFile    string
 	rpcClient  ocflv1connect.IndexServiceClient
 }
 
@@ -40,6 +43,8 @@ type OxCmd interface {
 }
 
 func (ox *Cmd) Init() {
+	ox.PersistentFlags().StringVar(&ox.certFile, "cert", "", "PEM certificate for client")
+	ox.PersistentFlags().StringVar(&ox.keyFile, "key", "", "PEM key for client")
 	ox.RemoteURL = getenvDefault(envRemote, defaultRemote)
 }
 
@@ -61,8 +66,21 @@ func (ox *Cmd) AddSub(subs ...OxCmd) {
 
 func (ox *Cmd) HTTPClient() *http.Client {
 	if ox.httpClient == nil {
+		var trans http.RoundTripper
+		if ox.certFile != "" && ox.keyFile != "" {
+			cert, err := tls.LoadX509KeyPair(ox.certFile, ox.keyFile)
+			if err != nil {
+				ox.Log.Error(err, "client config error")
+				os.Exit(1)
+			}
+			trans = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					Certificates: []tls.Certificate{cert},
+				},
+			}
+		}
 		ox.httpClient = &http.Client{
-			// Timeout: 20 * time.Second,
+			Transport: trans,
 		}
 	}
 	return ox.httpClient
