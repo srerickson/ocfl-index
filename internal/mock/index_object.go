@@ -76,40 +76,37 @@ func mockInventory(id string, head ocfl.VNum, bigname string, bigsize int) *ocfl
 	for i := 0; i < head.Num(); i++ {
 		v := "v" + strconv.Itoa(i+1)
 		created = created.AddDate(0, 0, 1)
-		stage := ocfl.NewStage(alg)
-		var err error
+		stage, err := ocfl.NewStage(alg, digest.Map{})
+		if err != nil {
+			panic(err)
+		}
 		// a common file for all versions, using v1 content
 		commonsrc := ""
 		if i == 0 {
 			commonsrc = "common.txt"
 		}
-		stage.UnsafeAdd("common.txt", commonsrc, commonSum)
+		stage.UnsafeAddPathAs(commonsrc, "common.txt", commonSum)
 		// a renamed file in every version, using v1 content
 		renamesrc := ""
 		if i == 0 {
 			renamesrc = "rename.txt"
 		}
-		stage.UnsafeAdd(v+"-rename.txt", renamesrc, renameSum)
+		stage.UnsafeAddPathAs(renamesrc, v+"-rename.txt", renameSum)
 		// a uniqe file for every version
-		stage.UnsafeAdd(v+"-new.txt", v+"-new.txt", quickDigestSet(alg, id+v+"new"))
+		stage.UnsafeAddPath(v+"-new.txt", quickDigestSet(alg, id+v+"new"))
 		// a file that is changed in every version
-		stage.UnsafeAdd("change.txt", "change.txt", quickDigestSet(alg, id+v+"change"))
+		stage.UnsafeAddPath("change.txt", quickDigestSet(alg, id+v+"change"))
 
+		stage.State()
 		// big directory
 		for i := 0; i < bigsize; i++ {
 			name := fmt.Sprintf("%s/%d-file.txt", bigname, i)
-			stage.UnsafeAdd(name, name, quickDigestSet(alg, name))
+			stage.UnsafeAddPath(name, quickDigestSet(alg, name))
 		}
-
 		if i == 0 {
-			inv, err = ocflv1.NewInventory(stage, id, "content", 0, created, v, &user)
-			if err != nil {
-				panic(err)
-			}
-			continue
+			inv = &ocflv1.Inventory{ID: id, Type: ocfl.Spec{1, 1}.AsInvType()}
 		}
-		inv, err = inv.NextVersionInventory(stage, created, v, &user)
-		if err != nil {
+		if err := inv.AddVersion(stage, v, &user, created, nil); err != nil {
 			panic(err)
 		}
 	}

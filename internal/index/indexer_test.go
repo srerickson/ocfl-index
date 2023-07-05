@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/go-logr/logr"
 	"github.com/srerickson/ocfl-index/internal/index"
 	"github.com/srerickson/ocfl-index/internal/sqlite"
 	"github.com/srerickson/ocfl/backend/cloud"
+	"github.com/srerickson/ocfl/logging"
 	"gocloud.dev/blob/fileblob"
 	_ "modernc.org/sqlite"
 )
@@ -45,13 +45,12 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		Index:    idx,
 		FS:       fsys,
 		RootPath: fixture,
-		Log:      logr.Discard(),
+		Log:      logging.DisabledLogger(),
 		Async:    index.NewAsync(ctx),
 	}
 	opts := &index.IndexOptions{
 		FS:       fsys,
 		RootPath: fixture,
-		Log:      logr.Discard(),
 	}
 	if err := srv.Index.Index(ctx, opts); err != nil {
 		return nil, err

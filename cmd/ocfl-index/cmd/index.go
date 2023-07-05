@@ -26,14 +26,14 @@ index file will be created if it does not exist.`,
 		conf := NewConfig(logger)
 		fsys, rootDir, err := conf.FS(ctx)
 		if err != nil {
-			logger.Error(err, "can't connect to backend")
+			logger.Error("can't connect to backend", "err", err)
 			return
 		}
 		if closer, ok := fsys.(io.Closer); ok {
 			defer closer.Close()
 		}
 		if err := DoIndex(ctx, &conf, fsys, rootDir); err != nil {
-			logger.Error(err, "index failed")
+			logger.Error("index failed", "err", err)
 		}
 	},
 }

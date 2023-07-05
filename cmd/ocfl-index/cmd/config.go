@@ -9,13 +9,12 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/go-logr/logr"
-	"github.com/iand/logfmtr"
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/index"
 	"github.com/srerickson/ocfl/backend/cloud"
 	"gocloud.dev/blob"
 	"gocloud.dev/blob/s3blob"
+	"golang.org/x/exp/slog"
 )
 
 const (
@@ -32,7 +31,7 @@ const (
 )
 
 type config struct {
-	Logger logr.Logger
+	Logger *slog.Logger
 
 	// Server
 	Addr string // port
@@ -51,18 +50,13 @@ type config struct {
 	ParseConc int // number of inventory parsing workers
 }
 
-func NewLogger() logr.Logger {
-	logger := logfmtr.NewWithOptions(logfmtr.Options{
-		Writer:    os.Stderr,
-		Humanize:  true,
-		NameDelim: "/",
-	})
-	logfmtr.SetVerbosity(verbosity)
+func NewLogger() *slog.Logger {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{}))
 	logger.Info("ocfl-index", "version", index.Version, "verbosity", verbosity)
 	return logger
 }
 
-func NewConfig(logger logr.Logger) config {
+func NewConfig(logger *slog.Logger) config {
 	c := config{
 		Logger: logger,
 	}
