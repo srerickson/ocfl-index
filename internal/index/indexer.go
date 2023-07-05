@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/srerickson/ocfl"
 	"github.com/srerickson/ocfl-index/internal/pipeline"
-	"github.com/srerickson/ocfl/backend/cloud"
+	"github.com/srerickson/ocfl/logging"
 	"github.com/srerickson/ocfl/ocflv1"
-	"gocloud.dev/blob"
+	"golang.org/x/exp/slog"
 )
 
 const txCapInv = 10       // number of inventory inserts per transaction
@@ -30,15 +28,15 @@ type IndexOptions struct {
 	RootPath    string  // storage root directory
 	ScanConc    int     // concurrency for readdir-based object scanning
 	ParseConc   int     // concurrency for inventory parsers
-	Log         logr.Logger
+	Log         *slog.Logger
 	ObjectIDs   []string // index specific object ids only
 	ObjectPaths []string // index specific object root paths only
 }
 
 // Index is updates the index database
 func (idx *Indexer) Index(ctx context.Context, opts *IndexOptions) error {
-	if opts.Log.GetSink() == nil {
-		opts.Log = logr.Discard()
+	if opts.Log == nil {
+		opts.Log = logging.DisabledLogger()
 	}
 	if len(opts.ObjectPaths)+len(opts.ObjectIDs) == 0 {
 		// reindex everything
@@ -57,21 +55,13 @@ func (idx *Indexer) Index(ctx context.Context, opts *IndexOptions) error {
 // object roots in the index that no longer exist in the storage root.
 func (idx *Indexer) syncObjectRoots(ctx context.Context, opts *IndexOptions) error {
 	count := 0
-	method := "default"
 	var err error
 	opts.Log.Info("updating object paths from storage root. This may take a while ...", "root", opts.RootPath)
 	defer func() {
-		opts.Log.Info("object path update complete", "object_roots", count, "method", method, "root", opts.RootPath)
+		opts.Log.Info("object path update complete", "object_roots", count, "root", opts.RootPath)
 	}()
 	startSync := time.Now()
-	switch fsys := opts.FS.(type) {
-	case *cloud.FS:
-		method = "list-keys"
-		count, err = cloudSyncObjecRoots(ctx, idx.Backend, fsys, opts.RootPath)
-	default:
-		method = "default"
-		count, err = defaultSyncObjecRoots(ctx, idx.Backend, opts.FS, opts.RootPath, opts.ScanConc)
-	}
+	count, err = syncObjecRootsTX(ctx, idx.Backend, opts.FS, opts.RootPath, opts.ScanConc)
 	if err != nil {
 		return err
 	}
@@ -86,21 +76,16 @@ func (idx *Indexer) syncObjectRoots(ctx context.Context, opts *IndexOptions) err
 	return tx.Commit()
 }
 
-func defaultSyncObjecRoots(ctx context.Context, db Backend, fsys ocfl.FS, root string, conc int) (int, error) {
-	store, err := ocflv1.GetStore(ctx, fsys, root)
-	if err != nil {
-		return 0, err
-	}
+func syncObjecRootsTX(ctx context.Context, db Backend, fsys ocfl.FS, root string, conc int) (int, error) {
 	tx, err := db.NewTx(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
 	found := 0
-	eachObj := func(obj *ocflv1.Object) error {
-		_, root := obj.Root()
+	eachObj := func(obj *ocfl.ObjectRoot) error {
 		// The indexed object root path should be relatvive to the storage root
-		r := ObjectRoot{Path: strings.TrimPrefix(root, root+"/")}
+		r := ObjectRoot{Path: strings.TrimPrefix(obj.Path, root+"/")}
 		if err := tx.IndexObjectRoot(ctx, time.Now(), r); err != nil {
 			return err
 		}
@@ -117,60 +102,15 @@ func defaultSyncObjecRoots(ctx context.Context, db Backend, fsys ocfl.FS, root s
 		}
 		return nil
 	}
-	if err := store.ScanObjects(ctx, eachObj, &ocflv1.ScanObjectsOpts{Concurrency: conc}); err != nil {
+	pth := ocfl.PathSelector{
+		Dir:       root,
+		SkipDirFn: func(name string) bool { return name == path.Join(root, "extensions") },
+	}
+	if err := ocfl.ObjectRoots(ctx, fsys, pth, eachObj); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
-	}
-	return found, nil
-}
-
-func cloudSyncObjecRoots(ctx context.Context, db Backend, fsys *cloud.FS, root string) (int, error) {
-	iter := fsys.List(&blob.ListOptions{
-		Prefix: root,
-	})
-	tx, err := db.NewTx(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	found := 0
-	var decl ocfl.Declaration
-	for {
-		item, err := iter.Next(ctx)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return 0, err
-		}
-		if err := ocfl.ParseDeclaration(path.Base(item.Key), &decl); err != nil {
-			continue
-		}
-		if decl.Type != ocfl.DeclObject {
-			continue
-		}
-		// item key's directory is an object root: index the path relative to the
-		// storage root.
-		objRoot := strings.TrimPrefix(path.Dir(item.Key), root+"/")
-		if err := tx.IndexObjectRoot(ctx, time.Now(), ObjectRoot{Path: objRoot}); err != nil {
-			return 0, err
-		}
-		found++
-		if found%txCapObjRoot == 0 {
-			// commit and start a new transaction
-			if err := tx.Commit(); err != nil {
-				return 0, err
-			}
-			tx, err = db.NewTx(ctx)
-			if err != nil {
-				return found, err
-			}
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return found, err
 	}
 	return found, nil
 }
@@ -264,14 +204,14 @@ func (idx *Indexer) indexInventories(ctx context.Context, opts *IndexOptions) er
 			if !indexingAll {
 				return job.err
 			}
-			opts.Log.Error(job.err, "object has errors", "object_path", root)
+			opts.Log.Error("object has errors", "err", job.err, "object_path", root)
 		}
 		if job.inv == nil {
 			// nothing to do
 			return nil
 		}
 		if job.prev != nil && job.sidecar != "" && job.prev.InventoryDigest == job.sidecar {
-			opts.Log.V(10).Info("object is unchanged", "object_path", root)
+			opts.Log.Debug("object is unchanged", "object_path", root)
 			return nil
 		}
 		numObjs++

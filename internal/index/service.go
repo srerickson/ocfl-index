@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"path"
 	"time"
@@ -13,8 +12,7 @@ import (
 	"github.com/bufbuild/connect-go"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	"github.com/go-logr/logr"
-	"github.com/go-logr/stdr"
+	"golang.org/x/exp/slog"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/srerickson/ocfl"
@@ -27,7 +25,7 @@ const downloadPrefix = "/download"
 
 // Service implements the gRPC services
 type Service struct {
-	Log       logr.Logger
+	Log       *slog.Logger
 	FS        ocfl.FS
 	RootPath  string
 	Index     *Indexer
@@ -40,17 +38,16 @@ type Service struct {
 var _ (ocflv1connect.IndexServiceHandler) = (*Service)(nil)
 
 func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAllRequest]) (*connect.Response[api.IndexAllResponse], error) {
-	opts := &IndexOptions{
-		FS:        srv.FS,
-		RootPath:  srv.RootPath,
-		ParseConc: srv.ParseConc,
-		ScanConc:  srv.ScanConc,
-	}
-	task := func(ctx context.Context, w io.Writer) error {
-		opts.Log = stdr.New(log.New(w, "", 0))
+	added, _ := srv.Async.TryNow("indexing", func(ctx context.Context, w io.Writer) error {
+		opts := &IndexOptions{
+			FS:        srv.FS,
+			RootPath:  srv.RootPath,
+			ParseConc: srv.ParseConc,
+			ScanConc:  srv.ScanConc,
+			Log:       slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{})),
+		}
 		return srv.Index.Index(ctx, opts)
-	}
-	added, _ := srv.Async.TryNow("indexing", task)
+	})
 	if !added {
 		return nil, errors.New("an indexing task is already running")
 	}
@@ -59,18 +56,17 @@ func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAl
 
 func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexIDsRequest]) (*connect.Response[api.IndexIDsResponse], error) {
 	// todo check max number of ids
-	opts := &IndexOptions{
-		FS:        srv.FS,
-		RootPath:  srv.RootPath,
-		ParseConc: srv.ParseConc,
-		ScanConc:  srv.ScanConc,
-		ObjectIDs: rq.Msg.ObjectIds,
-	}
-	task := func(ctx context.Context, w io.Writer) error {
-		opts.Log = stdr.New(log.New(w, "", 0))
+	added, taskErr := srv.Async.TryNow("indexing", func(ctx context.Context, w io.Writer) error {
+		opts := &IndexOptions{
+			FS:        srv.FS,
+			RootPath:  srv.RootPath,
+			ParseConc: srv.ParseConc,
+			ScanConc:  srv.ScanConc,
+			ObjectIDs: rq.Msg.ObjectIds,
+			Log:       slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{})),
+		}
 		return srv.Index.Index(ctx, opts)
-	}
-	added, taskErr := srv.Async.TryNow("indexing", task)
+	})
 	if !added {
 		return nil, errors.New("an indexing task is already running")
 	}
@@ -132,7 +128,7 @@ func (srv Service) HTTPHandler() http.Handler {
 	return mux
 }
 
-func RequestLogger(logger logr.Logger) func(http.Handler) http.Handler {
+func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
