@@ -42,7 +42,7 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		return nil, fmt.Errorf("initializing fixture index: %w", err)
 	}
 	srv := &index.Service{
-		Index:    idx,
+		Indexer:  idx,
 		FS:       fsys,
 		RootPath: fixture,
 		Log:      logging.DisabledLogger(),
@@ -52,7 +52,7 @@ func newTestService(ctx context.Context, fixture string) (*index.Service, error)
 		FS:       fsys,
 		RootPath: fixture,
 	}
-	if err := srv.Index.Index(ctx, opts); err != nil {
+	if err := srv.Indexer.Index(ctx, opts); err != nil {
 		return nil, err
 	}
 	return srv, nil

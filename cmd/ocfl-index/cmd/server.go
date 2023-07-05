@@ -78,7 +78,7 @@ func startServer(ctx context.Context, c *config, fsys ocfl.FS, rootDir string) e
 	// 	"ocfl spec", summary.Spec,
 	// 	"last_indexed", summary.IndexedAt)
 	service := index.Service{
-		Index:     idx,
+		Indexer:   idx,
 		Async:     index.NewAsync(ctx),
 		FS:        fsys,
 		RootPath:  rootDir,

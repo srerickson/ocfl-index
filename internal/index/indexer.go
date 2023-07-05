@@ -33,7 +33,7 @@ type IndexOptions struct {
 	ObjectPaths []string // index specific object root paths only
 }
 
-// Index is updates the index database
+// Index updates the index database
 func (idx *Indexer) Index(ctx context.Context, opts *IndexOptions) error {
 	if opts.Log == nil {
 		opts.Log = logging.DisabledLogger()
@@ -61,7 +61,7 @@ func (idx *Indexer) syncObjectRoots(ctx context.Context, opts *IndexOptions) err
 		opts.Log.Info("object path update complete", "object_roots", count, "root", opts.RootPath)
 	}()
 	startSync := time.Now()
-	count, err = syncObjecRootsTX(ctx, idx.Backend, opts.FS, opts.RootPath, opts.ScanConc)
+	count, err = syncObjecRootsTX(ctx, idx.Backend, opts.FS, opts.RootPath, opts.Log)
 	if err != nil {
 		return err
 	}
@@ -70,13 +70,14 @@ func (idx *Indexer) syncObjectRoots(ctx context.Context, opts *IndexOptions) err
 		return err
 	}
 	defer tx.Rollback()
+	opts.Log.Info("removing stale object roots from index")
 	if err := tx.RemoveObjectsBefore(ctx, startSync); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func syncObjecRootsTX(ctx context.Context, db Backend, fsys ocfl.FS, root string, conc int) (int, error) {
+func syncObjecRootsTX(ctx context.Context, db Backend, fsys ocfl.FS, root string, logger *slog.Logger) (int, error) {
 	tx, err := db.NewTx(ctx)
 	if err != nil {
 		return 0, err
@@ -86,12 +87,14 @@ func syncObjecRootsTX(ctx context.Context, db Backend, fsys ocfl.FS, root string
 	eachObj := func(obj *ocfl.ObjectRoot) error {
 		// The indexed object root path should be relatvive to the storage root
 		r := ObjectRoot{Path: strings.TrimPrefix(obj.Path, root+"/")}
+		logger.Debug("object_root", "path", r)
 		if err := tx.IndexObjectRoot(ctx, time.Now(), r); err != nil {
 			return err
 		}
 		found++
 		if found%txCapObjRoot == 0 {
 			// commit and start a new transaction
+			logger.Info("search object roots...", "count", found)
 			if err := tx.Commit(); err != nil {
 				return err
 			}
@@ -221,11 +224,13 @@ func (idx *Indexer) indexInventories(ctx context.Context, opts *IndexOptions) er
 		defer func() {
 			txCh <- tx
 		}()
+		opts.Log.Debug("index_inventory", "id", objInvs.Inventory.ID)
 		if err := tx.IndexObjectInventory(ctx, time.Now(), objInvs); err != nil {
 			return err
 		}
 		if numObjs%txCapInv == 0 {
 			var err error
+			opts.Log.Info("indexing inventories...", "count", numObjs)
 			if err = tx.Commit(); err != nil {
 				return err
 			}

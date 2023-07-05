@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"time"
 
@@ -28,7 +29,7 @@ type Service struct {
 	Log       *slog.Logger
 	FS        ocfl.FS
 	RootPath  string
-	Index     *Indexer
+	Indexer   *Indexer
 	Async     *Async
 	ParseConc int
 	ScanConc  int
@@ -44,9 +45,9 @@ func (srv Service) IndexAll(ctx context.Context, rq *connect.Request[api.IndexAl
 			RootPath:  srv.RootPath,
 			ParseConc: srv.ParseConc,
 			ScanConc:  srv.ScanConc,
-			Log:       slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{})),
+			Log:       slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stderr, w), &slog.HandlerOptions{})),
 		}
-		return srv.Index.Index(ctx, opts)
+		return srv.Indexer.Index(ctx, opts)
 	})
 	if !added {
 		return nil, errors.New("an indexing task is already running")
@@ -63,9 +64,9 @@ func (srv Service) IndexIDs(ctx context.Context, rq *connect.Request[api.IndexID
 			ParseConc: srv.ParseConc,
 			ScanConc:  srv.ScanConc,
 			ObjectIDs: rq.Msg.ObjectIds,
-			Log:       slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{})),
+			Log:       slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stderr, w), &slog.HandlerOptions{})),
 		}
-		return srv.Index.Index(ctx, opts)
+		return srv.Indexer.Index(ctx, opts)
 	})
 	if !added {
 		return nil, errors.New("an indexing task is already running")
@@ -83,7 +84,7 @@ func (srv Service) GetStatus(ctx context.Context, _ *connect.Request[api.GetStat
 	if err != nil {
 		return nil, err
 	}
-	summ, err := srv.Index.GetIndexSummary(ctx)
+	summ, err := srv.Indexer.GetIndexSummary(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func (srv Service) GetStatus(ctx context.Context, _ *connect.Request[api.GetStat
 }
 
 func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.ListObjectsRequest]) (*connect.Response[api.ListObjectsResponse], error) {
-	objects, err := srv.Index.ListObjects(ctx, rq.Msg.IdPrefix, int(rq.Msg.PageSize), rq.Msg.PageToken)
+	objects, err := srv.Indexer.ListObjects(ctx, rq.Msg.IdPrefix, int(rq.Msg.PageSize), rq.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,7 @@ func (srv Service) ListObjects(ctx context.Context, rq *connect.Request[api.List
 }
 
 func (srv Service) GetObject(ctx context.Context, rq *connect.Request[api.GetObjectRequest]) (*connect.Response[api.GetObjectResponse], error) {
-	obj, err := srv.Index.GetObject(ctx, rq.Msg.ObjectId)
+	obj, err := srv.Indexer.GetObject(ctx, rq.Msg.ObjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +159,7 @@ func (srv Service) downloadHandler() func(http.ResponseWriter, *http.Request) {
 		if name == "" {
 			name = sum
 		}
-		p, err := srv.Index.GetContentPath(ctx, sum)
+		p, err := srv.Indexer.GetContentPath(ctx, sum)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -184,7 +185,7 @@ func (srv Service) GetObjectState(ctx context.Context, rq *connect.Request[api.G
 			return nil, err
 		}
 	}
-	list, err := srv.Index.GetObjectState(ctx, rq.Msg.ObjectId, vnum, rq.Msg.BasePath, rq.Msg.Recursive, int(rq.Msg.PageSize), rq.Msg.PageToken)
+	list, err := srv.Indexer.GetObjectState(ctx, rq.Msg.ObjectId, vnum, rq.Msg.BasePath, rq.Msg.Recursive, int(rq.Msg.PageSize), rq.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
