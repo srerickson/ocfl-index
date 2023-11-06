@@ -1,3 +1,6 @@
+> **Note**
+> This repo is for reference only. The code is no longer maintained. Work has moved to [https://github.com/srerickson/chaparral/](https://github.com/srerickson/chaparral/).
+
 # ocfl-index
 
 `ocfl-index` provides a lightweight http/gRPC-based API for indexing and accessing the contents of [OCFL-based repositories](https://ocfl.io). It can serve content from OCFL storage roots on the local file system or in the cloud (S3, Azure, and GCS). The index is currently stored in an sqlite3 database, however additional database backends may be implemented in the future.
